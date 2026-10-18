@@ -91,12 +91,19 @@ More detail in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Privacy
 
-- Text you read is sent **only** to the voice provider **you** choose (OpenAI or
-  ElevenLabs). The System voice engine is fully offline.
-- API keys live in your OS keychain (Keychain / Credential Manager / Secret
-  Service).
-- No telemetry, no accounts, no servers of our own.
+No telemetry, no accounts, no servers of our own. What you read is sent only to the voice provider you choose
+(OpenAI or ElevenLabs); System voice, Local HD and Kokoro run on your machine. API keys stay in your OS keychain.
+Details in [PRIVACY.md](PRIVACY.md).
 
-## License
+## License and disclaimer
 
-[MIT](LICENSE)
+Voxtray is free, open source software under the [MIT License](LICENSE). Contributions welcome: see
+[CONTRIBUTING.md](CONTRIBUTING.md). Third-party components and their licences are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Report security issues privately as described in
+[SECURITY.md](SECURITY.md).
+
+Voxtray is provided as is, without warranty of any kind. Cloud voices are billed by their providers to your own
+account, and their terms apply to what you send them. OpenAI and ElevenLabs are trademarks of their owners;
+Voxtray is independent and not affiliated with them.
+
+Made by [harshal.dev](https://harshal.dev).
