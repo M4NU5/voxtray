@@ -1,6 +1,6 @@
 {
-  "name": "read-selected-text",
-  "version": "0.1.0",
+  "name": "voxtray",
+  "version": "0.2.0",
   "description": "Select text in any app, press a hotkey, and have it read aloud. A tiny cross-platform desktop TTS reader.",
   "type": "module",
   "license": "MIT",

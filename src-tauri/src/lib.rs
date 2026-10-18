@@ -1,4 +1,4 @@
-//! Read Selected Text — library entry point wired up by `main.rs`.
+//! Voxtray — library entry point wired up by `main.rs`.
 
 mod commands;
 mod download;
@@ -73,7 +73,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
     TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        .tooltip("Read Selected Text")
+        .tooltip("Voxtray")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -159,5 +159,5 @@ pub fn run() {
             commands::test_voice,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Read Selected Text");
+        .expect("error while running Voxtray");
 }

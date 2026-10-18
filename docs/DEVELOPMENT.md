@@ -39,7 +39,7 @@ Artifacts land in `src-tauri/target/release/bundle/` (`.msi`/`.exe` on Windows,
 ## Project layout
 
 ```
-read-selected-text/
+voxtray/
 ├── src/                     # Settings UI (plain HTML/CSS/JS)
 │   ├── index.html
 │   ├── main.js              # invokes Tauri commands

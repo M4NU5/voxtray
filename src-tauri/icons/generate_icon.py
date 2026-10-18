@@ -1,4 +1,4 @@
-"""Generate the source app icon (1024x1024 PNG) for Read Selected Text.
+"""Generate the source app icon (1024x1024 PNG) for Voxtray.
 
 Run once to (re)create `icon-source.png`, then let Tauri build the platform
 icon set from it with:  npx tauri icon src-tauri/icons/icon-source.png

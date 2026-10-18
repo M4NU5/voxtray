@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Read Selected Text",
-  "version": "0.1.0",
-  "identifier": "com.readselectedtext.app",
+  "productName": "Voxtray",
+  "version": "0.2.0",
+  "identifier": "dev.harshal.voxtray",
   "build": {
     "frontendDist": "../src"
   },
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Read Selected Text",
+        "title": "Voxtray",
         "width": 520,
         "height": 720,
         "minWidth": 420,

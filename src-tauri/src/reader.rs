@@ -102,7 +102,7 @@ fn notify(app: &AppHandle, title: &str, body: &str) {
 pub fn speak_text(app: &AppHandle, player: &Player, settings: &Settings, text: &str) {
     let text = text.trim();
     if text.is_empty() {
-        notify(app, "Read Selected Text", "No text was selected.");
+        notify(app, "Voxtray", "No text was selected.");
         return;
     }
 

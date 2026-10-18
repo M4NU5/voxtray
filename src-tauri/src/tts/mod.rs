@@ -30,4 +30,4 @@ pub fn speak(app: &AppHandle, settings: &Settings, text: &str) -> Result<Speech,
 
 /// A short probe used by the "Test voice" button.
 pub const SAMPLE_TEXT: &str =
-    "This is a test of Read Selected Text. Selected text will be read to you like this.";
+    "This is a test of Voxtray. Selected text will be read to you like this.";

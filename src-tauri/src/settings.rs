@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-const KEYRING_SERVICE: &str = "com.readselectedtext.app";
+const KEYRING_SERVICE: &str = "dev.harshal.voxtray";
 
 /// Which text-to-speech engine to use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,7 +105,7 @@ impl Default for Provider {
 
 fn config_path() -> Result<PathBuf, String> {
     let mut dir = dirs_config_dir().ok_or("could not resolve a config directory")?;
-    dir.push("com.readselectedtext.app");
+    dir.push("dev.harshal.voxtray");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create config dir: {e}"))?;
     dir.push("settings.json");
     Ok(dir)

@@ -5,7 +5,7 @@ This walks you from install to your first read-aloud in a couple of minutes.
 ## 1. Install
 
 Download the build for your OS from the
-[Releases](https://github.com/harshaldevvv/read-selected-text/releases) page:
+[Releases](https://github.com/harshaldevvv/voxtray/releases) page:
 
 - **Windows** — run the `.msi` or `-setup.exe`. Windows SmartScreen may warn
   about an unknown publisher (the app is unsigned); choose **More info → Run
@@ -13,7 +13,7 @@ Download the build for your OS from the
 - **macOS** — open the `.dmg` and drag the app to Applications. On first launch,
   right-click the app → **Open** to bypass Gatekeeper (unsigned build).
 - **Linux** — make the `.AppImage` executable (`chmod +x`) and run it, or
-  install the `.deb` with `sudo apt install ./read-selected-text_*.deb`.
+  install the `.deb` with `sudo apt install ./voxtray_*.deb`.
 
 ## 2. Choose a voice engine
 
@@ -73,7 +73,7 @@ behind Accessibility permission.
 
 - On first read, macOS prompts you. Approve it, **or**
 - go to **System Settings → Privacy & Security → Accessibility** and enable
-  **Read Selected Text**.
+  **Voxtray**.
 
 If reading returns "No text was selected" right after granting permission, quit
 and reopen the app so the new permission takes effect.

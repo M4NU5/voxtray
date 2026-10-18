@@ -1,16 +1,16 @@
 [package]
-name = "read-selected-text"
-version = "0.1.0"
+name = "voxtray"
+version = "0.2.0"
 description = "Select text in any app, press a hotkey, and have it read aloud."
-authors = ["Read Selected Text contributors"]
+authors = ["Harshal"]
 license = "MIT"
-repository = "https://github.com/harshaldevvv/read-selected-text"
+repository = "https://github.com/harshaldevvv/voxtray"
 edition = "2021"
 rust-version = "1.77"
 
 # The library that Tauri links against. `_lib` avoids a name clash with the bin.
 [lib]
-name = "read_selected_text_lib"
+name = "voxtray_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

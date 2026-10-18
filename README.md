@@ -1,18 +1,18 @@
 <div align="center">
 
-<img src="src-tauri/icons/128x128.png" width="96" height="96" alt="Read Selected Text" />
+<img src="src-tauri/icons/128x128.png" width="96" height="96" alt="Voxtray" />
 
-# Read Selected Text
+# Voxtray
 
 **Select text in any app, press a hotkey, hear it read aloud.**
 
 A tiny, cross-platform desktop app that lives in your system tray and reads your
-selected text out loud — in any application or website — using OpenAI,
-ElevenLabs, or your computer's built-in voice.
+selected text out loud, in any application or website. Use a free neural voice
+that runs on your own machine, OpenAI, ElevenLabs, or your computer's built-in voice.
 
-[![Release](https://img.shields.io/github/v/release/harshaldevvv/read-selected-text?include_prereleases)](https://github.com/harshaldevvv/read-selected-text/releases)
+[![Release](https://img.shields.io/github/v/release/harshaldevvv/voxtray?include_prereleases)](https://github.com/harshaldevvv/voxtray/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Build](https://github.com/harshaldevvv/read-selected-text/actions/workflows/release.yml/badge.svg)](https://github.com/harshaldevvv/read-selected-text/actions/workflows/release.yml)
+[![Build](https://github.com/harshaldevvv/voxtray/actions/workflows/release.yml/badge.svg)](https://github.com/harshaldevvv/voxtray/actions/workflows/release.yml)
 
 </div>
 
@@ -41,6 +41,7 @@ It runs quietly in the tray and can start automatically at login.
 | **OpenAI TTS**      |   Yes   | ~$15 / 1M chars | Very natural     |   No    |
 | **ElevenLabs**      |   Yes   | Plan-based      | Most human       |   No    |
 | **Local HD (Piper)**|   No    | **Free**        | Good & natural   |   Yes   |
+| **Kokoro (beta)**   |   No    | **Free**        | Very natural     | After first download |
 | **System voice**    |   No    | Free            | Basic/robotic    |   Yes   |
 
 **Local HD** is a free neural voice ([Piper](https://github.com/rhasspy/piper))
@@ -53,7 +54,7 @@ in the operating system's secure keychain — never in a plaintext file.
 ## Install
 
 Download the installer for your platform from the
-[**Releases**](https://github.com/harshaldevvv/read-selected-text/releases) page:
+[**Releases**](https://github.com/harshaldevvv/voxtray/releases) page:
 
 - **Windows** — `.msi` or `.exe` (NSIS)
 - **macOS** — `.dmg` (universal)
@@ -73,8 +74,8 @@ You need [Node.js](https://nodejs.org) and the
 the [Tauri docs](https://tauri.app/start/prerequisites/).
 
 ```bash
-git clone https://github.com/harshaldevvv/read-selected-text.git
-cd read-selected-text
+git clone https://github.com/harshaldevvv/voxtray.git
+cd voxtray
 npm install
 npm run dev      # run in development
 npm run build    # produce installers in src-tauri/target/release/bundle
