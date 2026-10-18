@@ -5,7 +5,7 @@ This walks you from install to your first read-aloud in a couple of minutes.
 ## 1. Install
 
 Download the build for your OS from the
-[Releases](https://github.com/harshalnarkhede/read-selected-text/releases) page:
+[Releases](https://github.com/harshaldevvv/read-selected-text/releases) page:
 
 - **Windows** — run the `.msi` or `-setup.exe`. Windows SmartScreen may warn
   about an unknown publisher (the app is unsigned); choose **More info → Run

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Select text in any app, press a hotkey, and have it read aloud."
 authors = ["Read Selected Text contributors"]
 license = "MIT"
-repository = "https://github.com/harshalnarkhede/read-selected-text"
+repository = "https://github.com/harshaldevvv/read-selected-text"
 edition = "2021"
 rust-version = "1.77"
 
