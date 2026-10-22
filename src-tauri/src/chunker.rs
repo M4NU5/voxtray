@@ -150,18 +150,18 @@ fn split_long(s: &str, max: usize) -> Vec<String> {
         let min = rest.char_indices().nth(max / 3).map_or(0, |(i, _)| i);
         let clause = head
             .char_indices()
-            .filter(|&(i, c)| {
+            .rev()
+            .find(|&(i, c)| {
                 i >= min
                     && matches!(c, ',' | ';' | ':' | '—' | '–' | ')')
                     && head[i + c.len_utf8()..].starts_with(' ')
             })
-            .map(|(i, c)| i + c.len_utf8())
-            .last();
+            .map(|(i, c)| i + c.len_utf8());
         let space = head
             .char_indices()
-            .filter(|&(i, c)| i >= min && c == ' ')
-            .map(|(i, _)| i)
-            .last();
+            .rev()
+            .find(|&(i, c)| i >= min && c == ' ')
+            .map(|(i, _)| i);
         let cut = clause.or(space).unwrap_or(head_end);
         out.push(rest[..cut].trim().to_string());
         rest = rest[cut..].trim_start();

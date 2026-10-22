@@ -8,14 +8,18 @@ use enigo::{Direction, Enigo, Key, Keyboard, Settings as EnigoSettings};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
+use crate::chunker;
 use crate::player::Player;
+use crate::reading::{Outcome, Reading};
 use crate::settings::{Provider, Settings};
-use crate::tts::{self, Speech};
+use crate::tts::{self, ChunkEngine};
 
 /// Shared application state, managed by Tauri and reachable from hotkey handlers.
 pub struct AppState {
     pub player: Arc<Player>,
     pub settings: Arc<Mutex<Settings>>,
+    /// The chunked reading in progress, if any.
+    pub reading: Mutex<Option<Arc<Reading>>>,
 }
 
 /// Simulate the platform copy shortcut so the focused app copies its selection.
@@ -89,7 +93,7 @@ fn capture_selection(restore: bool) -> Result<String, String> {
     Ok(text)
 }
 
-fn notify(app: &AppHandle, title: &str, body: &str) {
+pub fn notify(app: &AppHandle, title: &str, body: &str) {
     let _ = app
         .notification()
         .builder()
@@ -98,8 +102,8 @@ fn notify(app: &AppHandle, title: &str, body: &str) {
         .show();
 }
 
-/// Speak the given text using the provided settings, routing to the player.
-pub fn speak_text(app: &AppHandle, player: &Player, settings: &Settings, text: &str) {
+/// Start reading `text` aloud, replacing anything already playing.
+pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
     let text = text.trim();
     if text.is_empty() {
         notify(app, "Voxtray", "No text was selected.");
@@ -107,8 +111,7 @@ pub fn speak_text(app: &AppHandle, player: &Player, settings: &Settings, text: &
     }
 
     // Stop whatever is currently playing (any engine) before starting anew.
-    player.stop();
-    let _ = app.emit("kokoro-stop", ());
+    stop_all(app);
 
     // Kokoro runs entirely in the webview; hand off the text to the UI.
     if settings.provider == Provider::Kokoro {
@@ -124,15 +127,72 @@ pub fn speak_text(app: &AppHandle, player: &Player, settings: &Settings, text: &
         return;
     }
 
-    match tts::speak(app, settings, text) {
-        Ok(Speech::Audio(bytes)) => player.play_bytes(bytes),
-        Ok(Speech::Local(child)) => player.set_local_child(child),
-        Err(e) => notify(app, "Could not read text", &e),
+    let state: tauri::State<AppState> = app.state();
+    let mut engine = match ChunkEngine::open(app, settings) {
+        Some(Ok(engine)) => engine,
+        Some(Err(e)) => return notify(app, "Could not read text", &e),
+        // The system voice speaks the whole text itself.
+        None => {
+            match tts::local::speak(settings, text) {
+                Ok(child) => state.player.set_local_child(child),
+                Err(e) => notify(app, "Could not read text", &e),
+            }
+            return;
+        }
+    };
+
+    let interrupt = engine.interrupter();
+    let handle = app.clone();
+    let reading = Reading::start(
+        chunker::chunk(text),
+        move |chunk| engine.synthesize(chunk),
+        interrupt,
+        move |reading, outcome| finished(&handle, reading, outcome),
+    );
+    if let Ok(mut current) = state.reading.lock() {
+        *current = Some(reading.clone());
+    }
+    if let Err(e) = state.player.play_timeline(reading.shared.clone()) {
+        reading.stop();
+        notify(app, "Could not read text", &e);
+    }
+    crate::sync_skip_hotkeys(app);
+}
+
+/// Runs when a reading ends on its own, was stopped, or failed.
+fn finished(app: &AppHandle, reading: &Reading, outcome: Outcome) {
+    let state: tauri::State<AppState> = app.state();
+    if let Ok(mut current) = state.reading.lock() {
+        if current.as_ref().is_some_and(|r| r.id == reading.id) {
+            *current = None;
+        }
+    }
+    crate::sync_skip_hotkeys(app);
+    if let Outcome::Failed(e) = outcome {
+        notify(app, "Could not read text", &e);
     }
 }
 
-/// Capture the selection and read it. Runs the slow work on a worker thread.
+/// The reading still playing, paused or loading, if any.
+pub fn active_reading(app: &AppHandle) -> Option<Arc<Reading>> {
+    let state: tauri::State<AppState> = app.state();
+    let current = state.reading.lock().ok()?.clone();
+    current.filter(|r| r.is_active())
+}
+
+/// The read hotkey: pause or resume the current reading, or if nothing is
+/// being read, read the selection. A new selection needs Stop first.
 pub fn trigger_read(app: &AppHandle) {
+    if let Some(reading) = active_reading(app) {
+        let state = reading.toggle_pause();
+        log::info!("reading {}: {state:?}", reading.id);
+        return;
+    }
+    read_selection(app);
+}
+
+/// Capture the selection and read it. Runs the slow work on a worker thread.
+pub fn read_selection(app: &AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
         let state: tauri::State<AppState> = app.state();
@@ -142,18 +202,47 @@ pub fn trigger_read(app: &AppHandle) {
                 Err(_) => Settings::default(),
             }
         };
-        let player = state.player.clone();
 
         match capture_selection(settings.restore_clipboard) {
-            Ok(text) => speak_text(&app, &player, &settings, &text),
+            Ok(text) => speak_text(&app, &settings, &text),
             Err(e) => notify(&app, "Could not capture selection", &e),
         }
     });
 }
 
-/// Stop any current playback (all engines).
-pub fn trigger_stop(app: &AppHandle) {
+/// Pause or resume the current reading. Does nothing when idle.
+pub fn toggle_pause(app: &AppHandle) {
+    if let Some(reading) = active_reading(app) {
+        let state = reading.toggle_pause();
+        log::info!("reading {}: {state:?}", reading.id);
+    }
+}
+
+/// Skip the current reading 5 s forward or back.
+pub fn skip(app: &AppHandle, forward: bool) {
+    if let Some(reading) = active_reading(app) {
+        let (pos, buffered) = reading.skip(forward);
+        log::info!(
+            "reading {}: skip to {:.1}s of {:.1}s synthesised",
+            reading.id,
+            pos.as_secs_f32(),
+            buffered.as_secs_f32()
+        );
+    }
+}
+
+fn stop_all(app: &AppHandle) {
     let state: tauri::State<AppState> = app.state();
+    let current = state.reading.lock().ok().and_then(|mut g| g.take());
+    if let Some(reading) = current {
+        reading.stop();
+    }
     state.player.stop();
     let _ = app.emit("kokoro-stop", ());
+}
+
+/// Stop any current playback (all engines) and cancel pending synthesis.
+pub fn trigger_stop(app: &AppHandle) {
+    stop_all(app);
+    crate::sync_skip_hotkeys(app);
 }

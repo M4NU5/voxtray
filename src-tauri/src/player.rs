@@ -1,15 +1,16 @@
-//! Playback of both cloud TTS audio (MP3 bytes via rodio) and the local
+//! Playback of chunked readings (a PCM timeline via rodio) and the local
 //! system voice (via a subprocess), with a single `stop()` that covers both.
 
-use std::io::Cursor;
 use std::process::Child;
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 
-use rodio::{Decoder, OutputStream, Sink};
+use rodio::{OutputStream, Sink};
+
+use crate::timeline::{Shared, TimelineSource};
 
 enum AudioCmd {
-    Play(Vec<u8>),
+    Play(Arc<Shared>),
     Stop,
 }
 
@@ -37,19 +38,19 @@ impl Player {
             let mut current: Option<Sink> = None;
             while let Ok(cmd) = rx.recv() {
                 match cmd {
-                    AudioCmd::Play(bytes) => {
+                    AudioCmd::Play(shared) => {
                         if let Some(s) = current.take() {
                             s.stop();
                         }
                         match Sink::try_new(&handle) {
-                            Ok(sink) => match Decoder::new(Cursor::new(bytes)) {
-                                Ok(source) => {
-                                    sink.append(source);
-                                    current = Some(sink);
-                                }
-                                Err(e) => log::error!("decode audio: {e}"),
-                            },
-                            Err(e) => log::error!("create sink: {e}"),
+                            Ok(sink) => {
+                                sink.append(TimelineSource::new(shared));
+                                current = Some(sink);
+                            }
+                            Err(e) => {
+                                log::error!("create sink: {e}");
+                                shared.with(|t| t.stop());
+                            }
                         }
                     }
                     AudioCmd::Stop => {
@@ -67,10 +68,13 @@ impl Player {
         }
     }
 
-    /// Play MP3 (or other rodio-decodable) bytes from a cloud provider.
-    pub fn play_bytes(&self, bytes: Vec<u8>) {
+    /// Play a reading's timeline from its cursor. Audio appended to the
+    /// timeline later is picked up as playback reaches it.
+    pub fn play_timeline(&self, shared: Arc<Shared>) -> Result<(), String> {
         self.stop_local();
-        let _ = self.audio_tx.send(AudioCmd::Play(bytes));
+        self.audio_tx
+            .send(AudioCmd::Play(shared))
+            .map_err(|_| "audio output unavailable".to_string())
     }
 
     /// Register the child process spawned for local system-voice playback so it

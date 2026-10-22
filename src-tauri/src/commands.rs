@@ -136,7 +136,7 @@ pub fn ensure_piper(app: AppHandle, voice: String) {
 
 #[tauri::command]
 pub fn read_now(app: AppHandle) {
-    reader::trigger_read(&app);
+    reader::read_selection(&app);
 }
 
 #[tauri::command]
@@ -146,11 +146,10 @@ pub fn stop_playback(app: AppHandle) {
 
 /// Speak a fixed sample using the provided (possibly unsaved) settings.
 #[tauri::command]
-pub fn test_voice(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<(), String> {
-    let player = state.player.clone();
-    // Run off the UI thread; network synthesis can take a moment.
+pub fn test_voice(app: AppHandle, settings: Settings) -> Result<(), String> {
+    // Run off the UI thread; starting an engine can take a moment.
     std::thread::spawn(move || {
-        reader::speak_text(&app, &player, &settings, SAMPLE_TEXT);
+        reader::speak_text(&app, &settings, SAMPLE_TEXT);
     });
     Ok(())
 }

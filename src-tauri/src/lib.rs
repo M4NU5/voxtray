@@ -5,17 +5,19 @@ mod commands;
 mod download;
 mod player;
 mod reader;
+mod reading;
 mod settings;
 mod timeline;
 mod tts;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, WindowEvent};
 use tauri_plugin_autostart::{ManagerExt, MacosLauncher};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use player::Player;
 use reader::AppState;
@@ -49,7 +51,79 @@ pub fn register_hotkeys(app: &AppHandle, settings: &Settings) -> Result<(), Stri
         .map_err(|e| format!("stop hotkey '{label}': {e}"))?;
     }
 
+    // unregister_all dropped the skip keys too; restore them mid-reading.
+    sync_skip_hotkeys(app);
     Ok(())
+}
+
+/// Skip back / forward 5 s. Registered only while a reading is active, so the
+/// keys stay free for other apps the rest of the time.
+const SKIP_HOTKEYS: [(&str, bool); 2] = [
+    ("CmdOrControl+Alt+Left", false),
+    ("CmdOrControl+Alt+Right", true),
+];
+
+/// Register the skip keys if a reading is active, otherwise release them.
+///
+/// Always runs on its own thread: the shortcut plugin calls handlers while
+/// holding its shortcut lock, so (un)registering from a handler deadlocks.
+pub fn sync_skip_hotkeys(app: &AppHandle) {
+    static SYNC: Mutex<()> = Mutex::new(());
+    static WARNED: AtomicBool = AtomicBool::new(false);
+
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let _serial = SYNC.lock().unwrap_or_else(|e| e.into_inner());
+        let active = reader::active_reading(&app).is_some();
+        let state: tauri::State<AppState> = app.state();
+        let settings = state.settings.lock().map(|s| s.clone()).unwrap_or_default();
+        // Never touch a combo the user picked for read or stop.
+        let taken: Vec<u32> = [&settings.read_hotkey, &settings.stop_hotkey]
+            .iter()
+            .filter_map(|s| s.trim().parse::<Shortcut>().ok())
+            .map(|s| s.id())
+            .collect();
+
+        let gs = app.global_shortcut();
+        for (combo, forward) in SKIP_HOTKEYS {
+            let Ok(shortcut) = combo.parse::<Shortcut>() else {
+                continue;
+            };
+            if taken.contains(&shortcut.id()) {
+                continue;
+            }
+            let registered = gs.is_registered(shortcut);
+            if active && !registered {
+                let result = gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        reader::skip(app, forward);
+                    }
+                });
+                match result {
+                    Ok(()) => log::info!("registered {combo}"),
+                    Err(e) => {
+                        log::warn!("could not register {combo}: {e}");
+                        if !WARNED.swap(true, Ordering::Relaxed) {
+                            reader::notify(
+                                &app,
+                                "Skip keys unavailable",
+                                &format!(
+                                    "{} is taken by another app (graphics drivers often use \
+                                     Ctrl+Alt+arrows to rotate the screen).",
+                                    combo.replace("CmdOrControl", "Ctrl")
+                                ),
+                            );
+                        }
+                    }
+                }
+            } else if !active && registered {
+                match gs.unregister(shortcut) {
+                    Ok(()) => log::info!("released {combo}"),
+                    Err(e) => log::warn!("could not release {combo}: {e}"),
+                }
+            }
+        }
+    });
 }
 
 fn show_main(app: &AppHandle) {
@@ -62,11 +136,15 @@ fn show_main(app: &AppHandle) {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let read_i = MenuItem::with_id(app, "read", "Read selection", true, None::<&str>)?;
+    let pause_i = MenuItem::with_id(app, "pause", "Pause / Resume", true, None::<&str>)?;
     let stop_i = MenuItem::with_id(app, "stop", "Stop", true, None::<&str>)?;
     let settings_i = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&read_i, &stop_i, &sep, &settings_i, &quit_i])?;
+    let menu = Menu::with_items(
+        app,
+        &[&read_i, &pause_i, &stop_i, &sep, &settings_i, &quit_i],
+    )?;
 
     let icon = app
         .default_window_icon()
@@ -79,7 +157,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
-            "read" => reader::trigger_read(app),
+            "read" => reader::read_selection(app),
+            "pause" => reader::toggle_pause(app),
             "stop" => reader::trigger_stop(app),
             "settings" => show_main(app),
             "quit" => app.exit(0),
@@ -118,6 +197,7 @@ pub fn run() {
             let state = AppState {
                 player: Arc::new(Player::new()),
                 settings: Arc::new(Mutex::new(loaded.clone())),
+                reading: Mutex::new(None),
             };
             app.manage(state);
 
