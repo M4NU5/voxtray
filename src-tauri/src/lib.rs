@@ -6,6 +6,7 @@ mod download;
 mod player;
 mod reader;
 mod settings;
+mod timeline;
 mod tts;
 
 use std::sync::{Arc, Mutex};
