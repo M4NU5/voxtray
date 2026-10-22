@@ -113,18 +113,34 @@ impl Reading {
     /// Block until fewer than [`LOOKAHEAD`] chunks wait after the current one.
     /// False if the reading ended meanwhile.
     fn wait_for_room(&self) -> bool {
-        let mut t = self.shared.timeline.lock().unwrap_or_else(|e| e.into_inner());
+        let mut t = self
+            .shared
+            .timeline
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         while t.chunks_ahead() > LOOKAHEAD && t.state() != State::Finished && !self.is_cancelled() {
-            t = self.shared.changed.wait(t).unwrap_or_else(|e| e.into_inner());
+            t = self
+                .shared
+                .changed
+                .wait(t)
+                .unwrap_or_else(|e| e.into_inner());
         }
         t.state() != State::Finished && !self.is_cancelled()
     }
 
     /// Block until playback ends. True if it played out rather than stopped.
     fn wait_until_finished(&self) -> bool {
-        let mut t = self.shared.timeline.lock().unwrap_or_else(|e| e.into_inner());
+        let mut t = self
+            .shared
+            .timeline
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         while t.state() != State::Finished && !self.is_cancelled() {
-            t = self.shared.changed.wait(t).unwrap_or_else(|e| e.into_inner());
+            t = self
+                .shared
+                .changed
+                .wait(t)
+                .unwrap_or_else(|e| e.into_inner());
         }
         !self.is_cancelled()
     }
@@ -164,7 +180,11 @@ impl Reading {
     pub fn stop(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
         self.shared.with(|t| t.stop());
-        let interrupt = self.interrupt.lock().unwrap_or_else(|e| e.into_inner()).take();
+        let interrupt = self
+            .interrupt
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         if let Some(f) = interrupt {
             f();
         }
@@ -281,7 +301,11 @@ mod tests {
         drop(release_tx);
         assert_eq!(rx.recv_timeout(WAIT), Ok(Outcome::Stopped));
         assert_eq!(*calls.lock().unwrap(), 1, "no chunk after stop");
-        assert_eq!(r.shared.with(|t| t.buffered()), Duration::ZERO, "result discarded");
+        assert_eq!(
+            r.shared.with(|t| t.buffered()),
+            Duration::ZERO,
+            "result discarded"
+        );
         assert_eq!(r.state(), State::Finished);
     }
 
@@ -302,7 +326,10 @@ mod tests {
             .filter(|&s| s != 0)
             .count();
         assert_eq!(played, 200);
-        assert_eq!(rx.recv_timeout(WAIT), Ok(Outcome::Failed("network down".into())));
+        assert_eq!(
+            rx.recv_timeout(WAIT),
+            Ok(Outcome::Failed("network down".into()))
+        );
     }
 
     #[test]
@@ -335,11 +362,109 @@ mod tests {
         };
         let (rx, done) = done_channel();
         let r = Reading::start(chunks(3), move |_: &str| Ok(long()), None, done);
-        assert!(eventually(|| r.shared.with(|t| t.buffered()) == Duration::from_secs(12)));
+        assert!(eventually(
+            || r.shared.with(|t| t.buffered()) == Duration::from_secs(12)
+        ));
         assert_eq!(r.skip(true).0, Duration::from_secs(5));
         assert_eq!(r.skip(true).0, Duration::from_secs(10));
         assert_eq!(r.skip(false).0, Duration::from_secs(5));
         r.stop();
         assert_eq!(rx.recv_timeout(WAIT), Ok(Outcome::Stopped));
+    }
+
+    /// Renders a real passage through the real pipeline (chunker, warm Piper,
+    /// reading worker, timeline source) and reports, per chunk, when its audio
+    /// was ready versus when real-time playback would need it.
+    ///
+    /// `VOXTRAY_PIPER_EXE`, `VOXTRAY_PIPER_MODEL`, `VOXTRAY_RENDER_TEXT` (input
+    /// file) and `VOXTRAY_RENDER_WAV` (output) must be set.
+    #[test]
+    #[ignore = "needs a Piper binary, a voice and a text file"]
+    fn render_passage_with_piper() {
+        use crate::tts::piper::Engine;
+        use rodio::Source;
+        use std::io::Write;
+
+        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("set {k}"));
+        let text = std::fs::read_to_string(var("VOXTRAY_RENDER_TEXT")).unwrap();
+        let chunks = crate::chunker::chunk(&text);
+        let n = chunks.len();
+
+        let started = Instant::now();
+        let mut engine = Engine::spawn(
+            var("VOXTRAY_PIPER_EXE").as_ref(),
+            var("VOXTRAY_PIPER_MODEL").as_ref(),
+            1.0,
+        )
+        .unwrap();
+        let ready = Arc::new(Mutex::new(Vec::new()));
+        let r2 = ready.clone();
+        let synth = move |chunk: &str| {
+            let pcm = engine.synthesize(chunk);
+            r2.lock().unwrap().push(started.elapsed());
+            pcm
+        };
+        let (rx, done) = done_channel();
+        let r = Reading::start(chunks, synth, None, done);
+
+        // Play like a device that never underruns: before the source refills,
+        // wait until the timeline has audio past the cursor (or is complete).
+        assert!(eventually(
+            || r.shared.with(|t| t.buffered()) > Duration::ZERO
+        ));
+        let first_audio = started.elapsed();
+        let mut src = TimelineSource::new(r.shared.clone());
+        let rate = src.sample_rate();
+        let mut samples: Vec<i16> = Vec::new();
+        loop {
+            if src.current_frame_len() == Some(1) {
+                assert!(eventually(|| r.state() != State::Loading));
+            }
+            match src.next() {
+                Some(s) => samples.push(s),
+                None => break,
+            }
+        }
+        assert_eq!(rx.recv_timeout(WAIT), Ok(Outcome::Finished));
+
+        let mut wav =
+            std::io::BufWriter::new(std::fs::File::create(var("VOXTRAY_RENDER_WAV")).unwrap());
+        let data_len = (samples.len() * 2) as u32;
+        wav.write_all(b"RIFF").unwrap();
+        wav.write_all(&(36 + data_len).to_le_bytes()).unwrap();
+        wav.write_all(b"WAVEfmt ").unwrap();
+        for v in [16u32, 1 | (1 << 16), rate, rate * 2, 2 | (16 << 16)] {
+            wav.write_all(&v.to_le_bytes()).unwrap();
+        }
+        wav.write_all(b"data").unwrap();
+        wav.write_all(&data_len.to_le_bytes()).unwrap();
+        for s in &samples {
+            wav.write_all(&s.to_le_bytes()).unwrap();
+        }
+        wav.flush().unwrap();
+
+        // Chunk i is needed once everything before it has played in real time.
+        let ready = ready.lock().unwrap();
+        let durations: Vec<Duration> = r.shared.with(|t| t.chunk_durations());
+        let mut needed = first_audio;
+        let mut worst = Duration::MAX;
+        for (i, at) in ready.iter().enumerate() {
+            if i > 0 {
+                needed += durations[i - 1];
+                worst = worst.min(needed.saturating_sub(*at));
+                assert!(
+                    *at <= needed,
+                    "chunk {i} ready at {at:?}, needed at {needed:?}"
+                );
+            }
+        }
+        let audio = Duration::from_secs_f64(samples.len() as f64 / f64::from(rate));
+        println!(
+            "chunks={n} first_audio_ms={} synth_total_ms={} audio_s={:.1} min_headroom_ms={}",
+            first_audio.as_millis(),
+            ready.last().unwrap().as_millis(),
+            audio.as_secs_f64(),
+            worst.as_millis()
+        );
     }
 }

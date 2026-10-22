@@ -141,9 +141,17 @@ impl Timeline {
             .map(Pcm::duration)
             .sum();
         let within = self.chunks.get(self.chunk).map_or(Duration::ZERO, |c| {
-            frames_to_duration((self.offset / usize::from(c.channels.max(1))) as u64, c.sample_rate)
+            frames_to_duration(
+                (self.offset / usize::from(c.channels.max(1))) as u64,
+                c.sample_rate,
+            )
         });
         before + within
+    }
+
+    #[cfg(test)]
+    pub fn chunk_durations(&self) -> Vec<Duration> {
+        self.chunks.iter().map(Pcm::duration).collect()
     }
 
     /// Total audio appended so far.
@@ -200,7 +208,10 @@ impl Timeline {
             self.chunk += 1;
             self.offset = 0;
         }
-        let rate = self.chunks.get(self.chunk).map_or(FALLBACK_RATE, |c| c.sample_rate);
+        let rate = self
+            .chunks
+            .get(self.chunk)
+            .map_or(FALLBACK_RATE, |c| c.sample_rate);
         let channels = self.chunks.get(self.chunk).map_or(1, |c| c.channels);
         if self.paused {
             return Block::Silence { rate, channels };
@@ -273,7 +284,11 @@ impl TimelineSource {
     }
 
     fn refill(&mut self) {
-        let mut t = self.shared.timeline.lock().unwrap_or_else(|e| e.into_inner());
+        let mut t = self
+            .shared
+            .timeline
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let chunk_before = t.chunk;
         let block = t.read_block(&mut self.buf, BLOCK);
         let crossed = t.chunk != chunk_before;
@@ -321,7 +336,11 @@ impl Iterator for TimelineSource {
 impl Source for TimelineSource {
     fn current_frame_len(&self) -> Option<usize> {
         // Each block comes from one chunk, so format changes only at block edges.
-        Some(if self.ended { 0 } else { self.buf.len() - self.pos })
+        Some(if self.ended {
+            0
+        } else {
+            self.buf.len() - self.pos
+        })
     }
 
     fn channels(&self) -> u16 {
