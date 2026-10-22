@@ -1,0 +1,41 @@
+[package]
+name = "voxtray-engine"
+version = "0.2.0"
+description = "Voxtray's local speech engine: Kokoro via sherpa-onnx, driven over stdio."
+authors = ["Harshal"]
+# This crate's own code is MIT. The voxtray-engine binary statically links
+# sherpa-onnx, which includes espeak-ng (GPL-3.0-or-later), so the binary as
+# built and shipped is a GPL-3.0-or-later work. See THIRD-PARTY-NOTICES.md.
+license = "MIT"
+repository = "https://github.com/harshaldevvv/voxtray"
+edition = "2021"
+rust-version = "1.77"
+autobins = false
+
+# The protocol and the host-side client. The app links only this part.
+[lib]
+name = "voxtray_engine"
+
+[[bin]]
+name = "voxtray-engine"
+path = "src/main.rs"
+required-features = ["kokoro"]
+
+# A stand-in engine for the protocol tests. Never shipped.
+[[bin]]
+name = "fake-engine"
+path = "src/bin/fake-engine.rs"
+test = false
+bench = false
+
+[features]
+default = ["kokoro"]
+# The Kokoro backend. The app turns it off: it only needs the protocol.
+kokoro = ["dep:sherpa-onnx"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+# Pinned: the version picks the prebuilt static libraries that get linked.
+sherpa-onnx = { version = "=1.13.8", optional = true }

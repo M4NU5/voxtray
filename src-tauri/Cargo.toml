@@ -8,6 +8,10 @@ repository = "https://github.com/harshaldevvv/voxtray"
 edition = "2021"
 rust-version = "1.77"
 
+# The Kokoro engine ships as a separate binary (see engine/Cargo.toml).
+[workspace]
+members = ["engine"]
+
 # The library that Tauri links against. `_lib` avoids a name clash with the bin.
 [lib]
 name = "voxtray_lib"
@@ -45,6 +49,12 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 unicode-segmentation = "1"
 
 log = "0.4"
+
+# The engine protocol and client. Kokoro itself runs in the separate
+# voxtray-engine binary, so its backend stays off here.
+voxtray-engine = { path = "engine", default-features = false }
+# Unpacking the Kokoro model archive (.tar.bz2). Pure Rust by default.
+bzip2 = "0.6"
 
 [dev-dependencies]
 # Property tests for the chunker.
