@@ -10,7 +10,7 @@ use tauri_plugin_notification::NotificationExt;
 
 use crate::chunker;
 use crate::player::Player;
-use crate::reading::{Outcome, Reading};
+use crate::reading::{Outcome, Reading, Slot};
 use crate::settings::{Provider, Settings};
 use crate::tts::{self, ChunkEngine};
 
@@ -19,7 +19,7 @@ pub struct AppState {
     pub player: Arc<Player>,
     pub settings: Arc<Mutex<Settings>>,
     /// The chunked reading in progress, if any.
-    pub reading: Mutex<Option<Arc<Reading>>>,
+    pub reading: Mutex<Slot>,
 }
 
 /// Simulate the platform copy shortcut so the focused app copies its selection.
@@ -94,7 +94,7 @@ fn capture_selection(restore: bool) -> Result<String, String> {
 }
 
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
-    log::warn!("{title}: {body}");
+    log::warn!("{title}: {}", crate::logging::loggable(body));
     let _ = app.notification().builder().title(title).body(body).show();
 }
 
@@ -107,7 +107,7 @@ pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
     }
 
     // Stop whatever is currently playing (any engine) before starting anew.
-    stop_all(app);
+    let generation = stop_all(app);
 
     // Kokoro runs entirely in the webview; hand off the text to the UI.
     if settings.provider == Provider::Kokoro {
@@ -144,15 +144,25 @@ pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
 
     let interrupt = engine.interrupter();
     let handle = app.clone();
-    let reading = Reading::start(
-        chunker::chunk(text),
-        move |chunk| engine.synthesize(chunk),
-        interrupt,
-        move |reading, outcome| finished(&handle, reading, outcome),
-    );
-    if let Ok(mut current) = state.reading.lock() {
-        *current = Some(reading.clone());
-    }
+    let start = move || {
+        Reading::start(
+            chunker::chunk(text),
+            move |chunk| engine.synthesize(chunk),
+            interrupt,
+            move |reading, outcome| finished(&handle, reading, outcome),
+        )
+    };
+    // Opening the engine can take a while (the first Piper download). If Stop
+    // or another read happened meanwhile, drop this one.
+    let installed = state
+        .reading
+        .lock()
+        .ok()
+        .and_then(|mut slot| slot.install(generation, start));
+    let Some(reading) = installed else {
+        log::info!("start cancelled while opening the engine");
+        return;
+    };
     if let Err(e) = state.player.play_timeline(reading.shared.clone()) {
         reading.stop();
         notify(app, "Could not read text", &e);
@@ -163,10 +173,8 @@ pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
 /// Runs when a reading ends on its own, was stopped, or failed.
 fn finished(app: &AppHandle, reading: &Reading, outcome: Outcome) {
     let state: tauri::State<AppState> = app.state();
-    if let Ok(mut current) = state.reading.lock() {
-        if current.as_ref().is_some_and(|r| r.id == reading.id) {
-            *current = None;
-        }
+    if let Ok(mut slot) = state.reading.lock() {
+        slot.clear(reading.id);
     }
     crate::sync_skip_hotkeys(app);
     if let Outcome::Failed(e) = outcome {
@@ -177,7 +185,7 @@ fn finished(app: &AppHandle, reading: &Reading, outcome: Outcome) {
 /// The reading still playing, paused or loading, if any.
 pub fn active_reading(app: &AppHandle) -> Option<Arc<Reading>> {
     let state: tauri::State<AppState> = app.state();
-    let current = state.reading.lock().ok()?.clone();
+    let current = state.reading.lock().ok()?.current();
     current.filter(|r| r.is_active())
 }
 
@@ -237,14 +245,17 @@ pub fn skip(app: &AppHandle, forward: bool) {
     }
 }
 
-fn stop_all(app: &AppHandle) {
+/// Stop everything. Returns the reading generation a new start should use.
+fn stop_all(app: &AppHandle) -> u64 {
     let state: tauri::State<AppState> = app.state();
-    let current = state.reading.lock().ok().and_then(|mut g| g.take());
-    if let Some(reading) = current {
-        reading.stop();
-    }
+    let generation = state
+        .reading
+        .lock()
+        .map(|mut slot| slot.stop())
+        .unwrap_or(0);
     state.player.stop();
     let _ = app.emit("kokoro-stop", ());
+    generation
 }
 
 /// Stop any current playback (all engines) and cancel pending synthesis.

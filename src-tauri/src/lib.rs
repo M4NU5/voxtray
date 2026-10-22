@@ -66,65 +66,70 @@ const SKIP_HOTKEYS: [(&str, bool); 2] = [
 
 /// Register the skip keys if a reading is active, otherwise release them.
 ///
-/// Always runs on its own thread: the shortcut plugin calls handlers while
-/// holding its shortcut lock, so (un)registering from a handler deadlocks.
+/// The work is posted to the main thread from another thread, so it runs on
+/// a later turn of the event loop. That way it never runs inside a shortcut
+/// handler (the plugin holds its shortcut lock while handlers run, so
+/// (un)registering there deadlocks), and it is serialised with
+/// `register_hotkeys`, which also runs on the main thread.
 pub fn sync_skip_hotkeys(app: &AppHandle) {
-    static SYNC: Mutex<()> = Mutex::new(());
-    static WARNED: AtomicBool = AtomicBool::new(false);
-
     let app = app.clone();
     std::thread::spawn(move || {
-        let _serial = SYNC.lock().unwrap_or_else(|e| e.into_inner());
-        let active = reader::active_reading(&app).is_some();
-        let state: tauri::State<AppState> = app.state();
-        let settings = state.settings.lock().map(|s| s.clone()).unwrap_or_default();
-        // Never touch a combo the user picked for read or stop.
-        let taken: Vec<u32> = [&settings.read_hotkey, &settings.stop_hotkey]
-            .iter()
-            .filter_map(|s| s.trim().parse::<Shortcut>().ok())
-            .map(|s| s.id())
-            .collect();
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || apply_skip_hotkeys(&handle));
+    });
+}
 
-        let gs = app.global_shortcut();
-        for (combo, forward) in SKIP_HOTKEYS {
-            let Ok(shortcut) = combo.parse::<Shortcut>() else {
-                continue;
-            };
-            if taken.contains(&shortcut.id()) {
-                continue;
+fn apply_skip_hotkeys(app: &AppHandle) {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    let active = reader::active_reading(app).is_some();
+    let state: tauri::State<AppState> = app.state();
+    let settings = state.settings.lock().map(|s| s.clone()).unwrap_or_default();
+    // Never touch a combo the user picked for read or stop.
+    let taken: Vec<u32> = [&settings.read_hotkey, &settings.stop_hotkey]
+        .iter()
+        .filter_map(|s| s.trim().parse::<Shortcut>().ok())
+        .map(|s| s.id())
+        .collect();
+
+    let gs = app.global_shortcut();
+    for (combo, forward) in SKIP_HOTKEYS {
+        let Ok(shortcut) = combo.parse::<Shortcut>() else {
+            continue;
+        };
+        if taken.contains(&shortcut.id()) {
+            continue;
+        }
+        let registered = gs.is_registered(shortcut);
+        if active && !registered {
+            let result = gs.on_shortcut(shortcut, move |app, _shortcut, event| {
+                if event.state() == ShortcutState::Pressed {
+                    reader::skip(app, forward);
+                }
+            });
+            match result {
+                Ok(()) => log::info!("registered {combo}"),
+                Err(e) => {
+                    log::warn!("could not register {combo}: {e}");
+                    if !WARNED.swap(true, Ordering::Relaxed) {
+                        reader::notify(
+                            app,
+                            "Skip keys unavailable",
+                            &format!(
+                                "{} is taken by another app (graphics drivers often use \
+                                 Ctrl+Alt+arrows to rotate the screen).",
+                                combo.replace("CmdOrControl", "Ctrl")
+                            ),
+                        );
+                    }
+                }
             }
-            let registered = gs.is_registered(shortcut);
-            if active && !registered {
-                let result = gs.on_shortcut(shortcut, move |app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        reader::skip(app, forward);
-                    }
-                });
-                match result {
-                    Ok(()) => log::info!("registered {combo}"),
-                    Err(e) => {
-                        log::warn!("could not register {combo}: {e}");
-                        if !WARNED.swap(true, Ordering::Relaxed) {
-                            reader::notify(
-                                &app,
-                                "Skip keys unavailable",
-                                &format!(
-                                    "{} is taken by another app (graphics drivers often use \
-                                     Ctrl+Alt+arrows to rotate the screen).",
-                                    combo.replace("CmdOrControl", "Ctrl")
-                                ),
-                            );
-                        }
-                    }
-                }
-            } else if !active && registered {
-                match gs.unregister(shortcut) {
-                    Ok(()) => log::info!("released {combo}"),
-                    Err(e) => log::warn!("could not release {combo}: {e}"),
-                }
+        } else if !active && registered {
+            match gs.unregister(shortcut) {
+                Ok(()) => log::info!("released {combo}"),
+                Err(e) => log::warn!("could not release {combo}: {e}"),
             }
         }
-    });
+    }
 }
 
 fn show_main(app: &AppHandle) {
@@ -210,7 +215,7 @@ pub fn run() {
             let state = AppState {
                 player: Arc::new(Player::new()),
                 settings: Arc::new(Mutex::new(loaded.clone())),
-                reading: Mutex::new(None),
+                reading: Mutex::new(Default::default()),
             };
             app.manage(state);
 

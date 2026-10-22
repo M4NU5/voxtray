@@ -58,7 +58,12 @@ impl Reading {
         let r = reading.clone();
         std::thread::spawn(move || {
             let outcome = r.run(chunks, synth);
-            log::info!("reading {}: {outcome:?}", r.id);
+            match &outcome {
+                Outcome::Failed(e) => {
+                    log::info!("reading {}: Failed({})", r.id, crate::logging::loggable(e))
+                }
+                other => log::info!("reading {}: {other:?}", r.id),
+            }
             done(&r, outcome);
         });
         reading
@@ -187,6 +192,55 @@ impl Reading {
             .take();
         if let Some(f) = interrupt {
             f();
+        }
+    }
+}
+
+/// The current reading, plus a generation bumped by every stop, so a start
+/// that was still opening its engine can tell it has been cancelled.
+#[derive(Default)]
+pub struct Slot {
+    generation: u64,
+    current: Option<Arc<Reading>>,
+}
+
+impl Slot {
+    /// Stop the current reading. Returns the new generation, which a start
+    /// that begins now passes to [`Slot::install`].
+    pub fn stop(&mut self) -> u64 {
+        self.generation += 1;
+        if let Some(reading) = self.current.take() {
+            reading.stop();
+        }
+        self.generation
+    }
+
+    /// Run `start` and make its reading current, unless a stop (or a newer
+    /// start) happened since `generation`. Dropping an unused `start` drops
+    /// the engine it holds.
+    pub fn install(
+        &mut self,
+        generation: u64,
+        start: impl FnOnce() -> Arc<Reading>,
+    ) -> Option<Arc<Reading>> {
+        if generation != self.generation {
+            return None;
+        }
+        let reading = start();
+        if let Some(old) = self.current.replace(reading.clone()) {
+            old.stop();
+        }
+        Some(reading)
+    }
+
+    pub fn current(&self) -> Option<Arc<Reading>> {
+        self.current.clone()
+    }
+
+    /// Forget the reading `id` if it is still the current one.
+    pub fn clear(&mut self, id: u64) {
+        if self.current.as_ref().is_some_and(|r| r.id == id) {
+            self.current = None;
         }
     }
 }
@@ -370,6 +424,39 @@ mod tests {
         assert_eq!(r.skip(false).0, Duration::from_secs(5));
         r.stop();
         assert_eq!(rx.recv_timeout(WAIT), Ok(Outcome::Stopped));
+    }
+
+    fn idle_reading() -> Arc<Reading> {
+        let (_calls, synth) = recording_synth();
+        Reading::start(chunks(3), synth, None, |_: &Reading, _: Outcome| {})
+    }
+
+    #[test]
+    fn a_start_cancelled_while_opening_its_engine_never_begins() {
+        let mut slot = Slot::default();
+        let generation = slot.stop(); // a start begins
+        slot.stop(); // Stop is pressed while it opens its engine
+        assert!(slot
+            .install(generation, || panic!("must not start"))
+            .is_none());
+        assert!(slot.current().is_none());
+    }
+
+    #[test]
+    fn a_newer_start_stops_the_reading_it_replaces() {
+        let mut slot = Slot::default();
+        let first = slot.stop();
+        let a = slot.install(first, idle_reading).unwrap();
+        // A second start, racing the first, stops it before installing.
+        let second = slot.stop();
+        assert!(!a.is_active());
+        let b = slot.install(second, idle_reading).unwrap();
+        assert!(b.is_active());
+        // The first reading finishing late doesn't clear the second.
+        slot.clear(a.id);
+        assert_eq!(slot.current().map(|r| r.id), Some(b.id));
+        slot.stop();
+        assert!(!b.is_active());
     }
 
     /// Renders a real passage through the real pipeline (chunker, warm Piper,

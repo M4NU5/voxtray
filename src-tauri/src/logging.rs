@@ -34,6 +34,14 @@ impl Log for FileLogger {
     fn flush(&self) {}
 }
 
+/// The part of an error message that is safe to log: everything before the
+/// first `": "`. That keeps "OpenAI error 400 Bad Request" or "Piper stopped
+/// unexpectedly" and drops provider response bodies and Piper's stderr, which
+/// might quote the text being read.
+pub fn loggable(message: &str) -> &str {
+    message.split(": ").next().unwrap_or("")
+}
+
 /// Start logging to `path`. Logging stays off if the file can't be created.
 pub fn init(path: &Path) {
     let Ok(file) = File::create(path) else {
@@ -45,5 +53,23 @@ pub fn init(path: &Path) {
     }));
     if log::set_logger(logger).is_ok() {
         log::set_max_level(LevelFilter::Info);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::loggable;
+
+    #[test]
+    fn loggable_drops_bodies_and_stderr() {
+        assert_eq!(
+            loggable("OpenAI error 400 Bad Request: {\"input\": \"secret\"}"),
+            "OpenAI error 400 Bad Request"
+        );
+        assert_eq!(
+            loggable("Piper stopped unexpectedly: bad text"),
+            "Piper stopped unexpectedly"
+        );
+        assert_eq!(loggable("No text was selected."), "No text was selected.");
     }
 }
