@@ -17,9 +17,6 @@ use crate::download;
 use crate::settings::Settings;
 use crate::timeline::Pcm;
 
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
 /// Stderr lines kept for error messages.
 const STDERR_TAIL: usize = 8;
 
@@ -72,11 +69,7 @@ impl Engine {
         cmd.env("LD_LIBRARY_PATH", engine_dir);
         #[cfg(target_os = "macos")]
         cmd.env("DYLD_LIBRARY_PATH", engine_dir);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
+        super::hide_console(&mut cmd);
 
         let mut child = cmd
             .stdin(Stdio::piped())

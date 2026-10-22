@@ -5,13 +5,13 @@ use std::time::{Duration, Instant};
 
 use arboard::Clipboard;
 use enigo::{Direction, Enigo, Key, Keyboard, Settings as EnigoSettings};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::chunker;
 use crate::player::Player;
 use crate::reading::{Outcome, Reading, Slot};
-use crate::settings::{Provider, Settings};
+use crate::settings::Settings;
 use crate::tts::{self, ChunkEngine};
 
 /// Shared application state, managed by Tauri and reachable from hotkey handlers.
@@ -109,20 +109,6 @@ pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
     // Stop whatever is currently playing (any engine) before starting anew.
     let generation = stop_all(app);
 
-    // Kokoro runs entirely in the webview; hand off the text to the UI.
-    if settings.provider == Provider::Kokoro {
-        let _ = app.emit(
-            "kokoro-speak",
-            serde_json::json!({
-                "text": text,
-                "voice": settings.kokoro_voice,
-                "speed": settings.speed,
-                "dtype": settings.kokoro_dtype,
-            }),
-        );
-        return;
-    }
-
     let state: tauri::State<AppState> = app.state();
     log::info!(
         "opening {:?} for {} chars",
@@ -152,10 +138,10 @@ pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
             move |reading, outcome| finished(&handle, reading, outcome),
         )
     };
-    // Opening the engine can take a while (the first Piper download). If Stop
-    // or another read happened meanwhile, drop this one. Play is sent under
-    // the slot lock, like Stop in stop_all, so the audio thread gets them in
-    // the same order as the slot changes.
+    // Opening the engine can take a while (the first Piper or Kokoro
+    // download). If Stop or another read happened meanwhile, drop this one.
+    // Play is sent under the slot lock, like Stop in stop_all, so the audio
+    // thread gets them in the same order as the slot changes.
     let installed = state.reading.lock().ok().and_then(|mut slot| {
         let reading = slot.install(generation, start)?;
         let played = state.player.play_timeline(reading.shared.clone());
@@ -254,7 +240,6 @@ fn stop_all(app: &AppHandle) -> u64 {
     let generation = slot.stop();
     state.player.stop();
     drop(slot);
-    let _ = app.emit("kokoro-stop", ());
     generation
 }
 

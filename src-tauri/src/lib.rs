@@ -259,6 +259,8 @@ pub fn run() {
             commands::list_piper_voices,
             commands::piper_status,
             commands::ensure_piper,
+            commands::kokoro_status,
+            commands::ensure_kokoro,
             commands::read_now,
             commands::stop_playback,
             commands::test_voice,

@@ -109,10 +109,9 @@
         <!-- Kokoro (beta) panel -->
         <div class="provider-panel" data-provider="kokoro" hidden>
           <p class="hint">
-            Highest-quality free voice. Runs the Kokoro neural model right inside
-            the app. The model (~80 MB) downloads once and is cached. <b>Beta</b> —
-            needs internet the first time; quality is excellent but synthesis can
-            take a few seconds on CPU.
+            Highest-quality free voice. Kokoro runs on your machine, in its own
+            engine. The model (~350 MB) downloads once, then works offline.
+            <b>Beta</b> — each reading takes a few seconds to start.
           </p>
           <label class="field">
             <span>Voice</span>
@@ -137,16 +136,8 @@
               </optgroup>
             </select>
           </label>
-          <label class="field">
-            <span>Quality / size</span>
-            <select id="kokoro-dtype">
-              <option value="q8">Balanced (q8, ~80 MB)</option>
-              <option value="q4">Smallest (q4, ~45 MB)</option>
-              <option value="fp32">Best (fp32, ~330 MB)</option>
-            </select>
-          </label>
           <div class="key-row">
-            <button class="ghost small" id="kokoro-load">Load &amp; test model</button>
+            <button class="ghost small" id="kokoro-download">Download model</button>
           </div>
           <small id="kokoro-status" class="key-status"></small>
         </div>

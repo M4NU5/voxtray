@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; worker-src 'self' blob: https://cdn.jsdelivr.net; child-src 'self' blob: https://cdn.jsdelivr.net; connect-src 'self' ipc: http://ipc.localhost https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co https://*.hf.co"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {

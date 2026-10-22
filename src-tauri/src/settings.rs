@@ -32,7 +32,7 @@ pub enum Provider {
     Elevenlabs,
     /// Free, offline, neural local voice (downloaded on first use).
     Piper,
-    /// Free neural voice that runs in the webview via kokoro-js (beta).
+    /// Free, offline neural voice run by the bundled voxtray-engine (beta).
     Kokoro,
     /// Built-in operating-system voice.
     Local,
@@ -77,11 +77,9 @@ pub struct Settings {
     /// Piper voice key, e.g. `en_US-amy-medium`.
     pub piper_voice: String,
 
-    // --- Kokoro (free neural voice in the webview, beta) ---
+    // --- Kokoro (free local neural voice, beta) ---
     /// Kokoro voice id, e.g. `af_heart`.
     pub kokoro_voice: String,
-    /// Model precision: fp32 | fp16 | q8 | q4 | q4f16.
-    pub kokoro_dtype: String,
 
     // --- Local system voice ---
     /// Platform-specific voice identifier/name (empty = system default).
@@ -105,7 +103,6 @@ impl Default for Settings {
             elevenlabs_voice_id: "21m00Tcm4TlvDq8ikWAM".into(), // "Rachel"
             piper_voice: "en_US-amy-medium".into(),
             kokoro_voice: "af_heart".into(),
-            kokoro_dtype: "q8".into(),
             local_voice: String::new(),
             local_rate: 0,
         }
