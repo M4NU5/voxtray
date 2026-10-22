@@ -335,7 +335,12 @@ pub fn ensure_kokoro_model(app: &AppHandle) -> Result<PathBuf, String> {
     if dir.join("model.onnx").exists() {
         return Ok(dir);
     }
+    let started = std::time::Instant::now();
     let result = download_kokoro(app, &dir);
+    match &result {
+        Ok(()) => log::info!("Kokoro model downloaded in {} s", started.elapsed().as_secs()),
+        Err(e) => log::warn!("Kokoro model download failed: {}", crate::logging::loggable(e)),
+    }
     let done = match &result {
         Ok(()) => json!({ "ok": true }),
         Err(e) => json!({ "ok": false, "error": e }),

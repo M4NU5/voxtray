@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+use std::time::Instant;
 
 use crate::protocol::{Ready, Request, Response, PROTOCOL};
 
@@ -24,6 +25,7 @@ pub struct Client {
     stderr_reader: Option<JoinHandle<()>>,
     out_dir: PathBuf,
     ready: Option<Ready>,
+    started: Instant,
     next: u64,
 }
 
@@ -86,6 +88,7 @@ impl Client {
             stderr_reader,
             out_dir,
             ready: None,
+            started: Instant::now(),
             next: 1,
         })
     }
@@ -103,7 +106,14 @@ impl Client {
         if self.ready.is_none() {
             let name = self.name.clone();
             match self.next_response()? {
-                Response::Ready(r) if r.protocol == PROTOCOL => self.ready = Some(r),
+                Response::Ready(r) if r.protocol == PROTOCOL => {
+                    log::info!(
+                        "{name} engine {} ready in {} ms",
+                        r.version,
+                        self.started.elapsed().as_millis()
+                    );
+                    self.ready = Some(r);
+                }
                 Response::Ready(r) => {
                     return Err(format!(
                         "{name} engine speaks protocol {}, expected {PROTOCOL}",
