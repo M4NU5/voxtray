@@ -94,6 +94,7 @@ fn capture_selection(restore: bool) -> Result<String, String> {
 }
 
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
+    log::warn!("{title}: {body}");
     let _ = app.notification().builder().title(title).body(body).show();
 }
 
@@ -123,6 +124,11 @@ pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
     }
 
     let state: tauri::State<AppState> = app.state();
+    log::info!(
+        "opening {:?} for {} chars",
+        settings.provider,
+        text.chars().count()
+    );
     let mut engine = match ChunkEngine::open(app, settings) {
         Some(Ok(engine)) => engine,
         Some(Err(e)) => return notify(app, "Could not read text", &e),
@@ -183,6 +189,7 @@ pub fn trigger_read(app: &AppHandle) {
         log::info!("reading {}: {state:?}", reading.id);
         return;
     }
+    log::info!("read hotkey: capturing selection");
     read_selection(app);
 }
 
@@ -198,7 +205,11 @@ pub fn read_selection(app: &AppHandle) {
             }
         };
 
-        match capture_selection(settings.restore_clipboard) {
+        let captured = capture_selection(settings.restore_clipboard);
+        if let Ok(text) = &captured {
+            log::info!("captured {} chars", text.chars().count());
+        }
+        match captured {
             Ok(text) => speak_text(&app, &settings, &text),
             Err(e) => notify(&app, "Could not capture selection", &e),
         }

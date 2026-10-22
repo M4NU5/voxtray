@@ -223,8 +223,13 @@ pub fn run() {
             }
 
             // Register global shortcuts.
-            if let Err(e) = register_hotkeys(&handle, &loaded) {
-                log::error!("failed to register hotkeys: {e}");
+            match register_hotkeys(&handle, &loaded) {
+                Ok(()) => log::info!(
+                    "registered read {} and stop {}",
+                    loaded.read_hotkey,
+                    loaded.stop_hotkey
+                ),
+                Err(e) => log::error!("failed to register hotkeys: {e}"),
             }
 
             // System tray.
