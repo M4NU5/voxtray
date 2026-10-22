@@ -1,5 +1,6 @@
 //! Voxtray — library entry point wired up by `main.rs`.
 
+mod chunker;
 mod commands;
 mod download;
 mod player;
