@@ -29,8 +29,11 @@ computer, with no copy-paste into a website.
 
 1. You select text anywhere — a browser, a PDF, your IDE, a chat window.
 2. You press the global hotkey (default **Ctrl/Cmd + Alt + R**).
-3. The app copies the selection, sends it to your chosen voice engine, and plays
-   the audio. Press **Ctrl/Cmd + Alt + S** to stop.
+3. The app copies the selection and reads it a sentence or two at a time, so
+   long passages start playing almost at once.
+4. Press the read hotkey again to pause or resume. While reading,
+   **Ctrl/Cmd + Alt + ←/→** skip back or forward 5 seconds. Press
+   **Ctrl/Cmd + Alt + S** to stop.
 
 It runs quietly in the tray and can start automatically at login.
 

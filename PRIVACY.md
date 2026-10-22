@@ -20,6 +20,8 @@ only on the voice engine you pick.
 - **Settings** (engine, voice, hotkeys, speed) are in a `settings.json` file in your user config folder, under
   `dev.harshal.voxtray`.
 - **Downloaded voices and engines** are in your user data folder, under `dev.harshal.voxtray`.
+- **A log of the last run** (`voxtray.log`, next to `settings.json`) records timings and errors. It never
+  contains the text you read, and it is replaced each time Voxtray starts.
 - **Your clipboard:** Voxtray reads your selection by sending the copy shortcut. With "restore clipboard" on
   (the default), your previous clipboard text is put back afterwards.
 

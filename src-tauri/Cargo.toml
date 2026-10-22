@@ -41,7 +41,14 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 # HTTP client for the TTS providers. rustls avoids a system OpenSSL dependency.
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 
+# Unicode (UAX #29) sentence boundaries for splitting text into chunks.
+unicode-segmentation = "1"
+
 log = "0.4"
+
+[dev-dependencies]
+# Property tests for the chunker.
+proptest = { version = "1", default-features = false, features = ["std"] }
 
 [features]
 # Enable the Tauri devtools in debug builds.
@@ -53,3 +60,4 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
