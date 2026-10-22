@@ -94,12 +94,7 @@ fn capture_selection(restore: bool) -> Result<String, String> {
 }
 
 pub fn notify(app: &AppHandle, title: &str, body: &str) {
-    let _ = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show();
+    let _ = app.notification().builder().title(title).body(body).show();
 }
 
 /// Start reading `text` aloud, replacing anything already playing.

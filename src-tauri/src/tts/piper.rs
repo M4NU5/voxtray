@@ -188,7 +188,9 @@ mod tests {
     fn warm_engine_synthesises_chunks_in_order() {
         let mut engine = engine();
         let short = engine.synthesize("Hi.").unwrap();
-        let long = engine.synthesize("This sentence is a good deal longer than that.").unwrap();
+        let long = engine
+            .synthesize("This sentence is a good deal longer than that.")
+            .unwrap();
         assert_eq!(short.channels, 1);
         assert!(short.sample_rate >= 16_000);
         assert!(long.duration() > short.duration());

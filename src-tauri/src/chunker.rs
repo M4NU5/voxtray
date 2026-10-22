@@ -58,7 +58,11 @@ fn len(s: &str) -> usize {
 fn paragraphs(text: &str) -> Vec<String> {
     let text = text.replace("\r\n", "\n").replace('\r', "\n");
     let mut out = Vec::new();
-    for block in text.split("\n").collect::<Vec<_>>().split(|l| l.trim().is_empty()) {
+    for block in text
+        .split("\n")
+        .collect::<Vec<_>>()
+        .split(|l| l.trim().is_empty())
+    {
         let lines: Vec<String> = block.iter().map(|l| collapse_ws(l)).collect();
         let widest = lines.iter().map(|l| len(l)).max().unwrap_or(0);
         let mut para = String::new();
@@ -210,7 +214,10 @@ mod tests {
         let c = chunk("Start. Pi is 3.14 and see example.com/a.b for more. Wait... what.");
         assert_eq!(
             c,
-            vec!["Start.", "Pi is 3.14 and see example.com/a.b for more. Wait... what."]
+            vec![
+                "Start.",
+                "Pi is 3.14 and see example.com/a.b for more. Wait... what."
+            ]
         );
     }
 
@@ -236,7 +243,10 @@ mod tests {
         let c = chunk("Introduction\nThis study looks at sleep in sixty adults over a year.");
         assert_eq!(
             c,
-            vec!["Introduction", "This study looks at sleep in sixty adults over a year."]
+            vec![
+                "Introduction",
+                "This study looks at sleep in sixty adults over a year."
+            ]
         );
     }
 
@@ -264,7 +274,10 @@ mod tests {
         let c = chunk(&s);
         assert!(c.len() > 2, "{c:?}");
         for piece in &c[1..c.len() - 1] {
-            assert!(piece.ends_with(','), "should end at a clause mark: {piece:?}");
+            assert!(
+                piece.ends_with(','),
+                "should end at a clause mark: {piece:?}"
+            );
             assert!(len(piece) <= MAX_CHARS);
         }
     }
@@ -273,7 +286,10 @@ mod tests {
     fn unbroken_text_is_hard_cut() {
         let s = "x".repeat(MAX_CHARS * 2 + 5);
         let c = chunk(&s);
-        assert_eq!(c.iter().map(|p| len(p)).collect::<Vec<_>>(), [MAX_CHARS, MAX_CHARS, 5]);
+        assert_eq!(
+            c.iter().map(|p| len(p)).collect::<Vec<_>>(),
+            [MAX_CHARS, MAX_CHARS, 5]
+        );
     }
 
     #[test]

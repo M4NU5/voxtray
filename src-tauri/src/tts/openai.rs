@@ -48,7 +48,10 @@ impl Client {
         if !resp.status().is_success() {
             let status = resp.status();
             let text = resp.text().unwrap_or_default();
-            return Err(format!("OpenAI error {status}: {}", super::truncate(&text, 300)));
+            return Err(format!(
+                "OpenAI error {status}: {}",
+                super::truncate(&text, 300)
+            ));
         }
 
         let bytes = resp.bytes().map_err(|e| e.to_string())?;
