@@ -153,17 +153,19 @@ pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
         )
     };
     // Opening the engine can take a while (the first Piper download). If Stop
-    // or another read happened meanwhile, drop this one.
-    let installed = state
-        .reading
-        .lock()
-        .ok()
-        .and_then(|mut slot| slot.install(generation, start));
-    let Some(reading) = installed else {
+    // or another read happened meanwhile, drop this one. Play is sent under
+    // the slot lock, like Stop in stop_all, so the audio thread gets them in
+    // the same order as the slot changes.
+    let installed = state.reading.lock().ok().and_then(|mut slot| {
+        let reading = slot.install(generation, start)?;
+        let played = state.player.play_timeline(reading.shared.clone());
+        Some((reading, played))
+    });
+    let Some((reading, played)) = installed else {
         log::info!("start cancelled while opening the engine");
         return;
     };
-    if let Err(e) = state.player.play_timeline(reading.shared.clone()) {
+    if let Err(e) = played {
         reading.stop();
         notify(app, "Could not read text", &e);
     }
@@ -248,12 +250,10 @@ pub fn skip(app: &AppHandle, forward: bool) {
 /// Stop everything. Returns the reading generation a new start should use.
 fn stop_all(app: &AppHandle) -> u64 {
     let state: tauri::State<AppState> = app.state();
-    let generation = state
-        .reading
-        .lock()
-        .map(|mut slot| slot.stop())
-        .unwrap_or(0);
+    let mut slot = state.reading.lock().unwrap_or_else(|e| e.into_inner());
+    let generation = slot.stop();
     state.player.stop();
+    drop(slot);
     let _ = app.emit("kokoro-stop", ());
     generation
 }
