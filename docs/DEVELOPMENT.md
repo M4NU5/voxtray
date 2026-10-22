@@ -27,11 +27,40 @@ npm run dev
 
 This launches the app with hot-reloading of the Rust core and the static UI.
 
+## The Kokoro engine
+
+Kokoro runs in `voxtray-engine`, a separate program. Its crate is
+`src-tauri/engine`, a member of the Cargo workspace. It links the
+[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) static libraries, which
+the `sherpa-onnx` crate downloads on its first build. Voxtray starts one per
+reading and talks to it over stdin and stdout, using the JSON-lines protocol in
+`src-tauri/engine/src/protocol.rs`.
+
+It is separate because sherpa-onnx includes espeak-ng, which is
+GPL-3.0-or-later. The app only depends on the crate's protocol and client, with
+the `kokoro` feature off, so none of that code ends up in Voxtray itself.
+
+`npm run dev` doesn't build it. Build it once:
+
+```bash
+cd src-tauri
+cargo build -p voxtray-engine
+```
+
+It lands in `target/debug` next to the dev app, which is where Voxtray looks
+for it. `VOXTRAY_ENGINE_EXE` overrides the location.
+
+Installers bundle it as a Tauri sidecar. `scripts/build-engine.sh` builds it
+into `src-tauri/binaries/`, and `--config src-tauri/tauri.engine.conf.json`
+adds it to the bundle. That setting lives in its own file because tauri-build
+refuses to build when a sidecar is missing, and a plain `cargo build` shouldn't
+need the engine.
+
 ## Voxtray Dev on Windows, from WSL
 
-`scripts/build-dev-windows.sh` cross-compiles **Voxtray Dev** with
-[cargo-xwin](https://github.com/rust-cross/cargo-xwin) (it also needs `clang`
-and `lld`) and copies it to `%LOCALAPPDATA%\VoxtrayDev\Voxtray Dev.exe`. Voxtray
+`scripts/build-dev-windows.sh` cross-compiles **Voxtray Dev** and the Kokoro
+engine with [cargo-xwin](https://github.com/rust-cross/cargo-xwin) (it also
+needs `clang` and `lld`) and copies them to `%LOCALAPPDATA%\VoxtrayDev`. Voxtray
 Dev uses its own identifier (`src-tauri/tauri.dev.conf.json`), so its settings,
 downloads, keychain entries and `voxtray.log` stay apart from an installed
 Voxtray. On Windows the log is at `%APPDATA%\dev.harshal.voxtray.dev\voxtray.log`.
@@ -42,6 +71,8 @@ Voxtray. On Windows the log is at `%APPDATA%\dev.harshal.voxtray.dev\voxtray.log
 cd src-tauri
 cargo test
 cargo clippy --all-targets
+cargo test -p voxtray-engine     # the protocol, and the client against a fake engine
+cargo clippy -p voxtray-engine --all-targets
 ```
 
 Tests that need a real Piper binary and voice are ignored by default:
@@ -51,15 +82,30 @@ VOXTRAY_PIPER_EXE=/path/to/piper VOXTRAY_PIPER_MODEL=/path/to/voice.onnx \
   cargo test -- --ignored piper
 ```
 
-`render_passage_with_piper` (also ignored) reads a text file through the whole
-pipeline, writes the audio to a WAV and checks every chunk was ready before
-real-time playback needed it. Set `VOXTRAY_RENDER_TEXT` and `VOXTRAY_RENDER_WAV`
-as well, and run it with `--release --nocapture`.
+So are the ones that need the Kokoro model. Unpack
+[kokoro-multi-lang-v1_0.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models)
+somewhere, then:
+
+```bash
+export VOXTRAY_KOKORO_MODEL=/path/to/kokoro-multi-lang-v1_0
+cargo test -p voxtray-engine -- --ignored
+VOXTRAY_ENGINE_EXE=$PWD/target/debug/voxtray-engine cargo test -- --ignored kokoro
+```
+
+`VOXTRAY_KOKORO_ARCHIVE=/path/to/kokoro-multi-lang-v1_0.tar.bz2` also runs the
+test that unpacks the archive.
+
+`render_passage_with_piper` and `render_passage_with_kokoro` are ignored too.
+They read a text file through the whole pipeline, write the audio to a WAV and
+check every chunk was ready before real-time playback needed it. Set
+`VOXTRAY_RENDER_TEXT` and `VOXTRAY_RENDER_WAV` as well, and run them with
+`--release --nocapture`. `VOXTRAY_RENDER_SPEED` sets Kokoro's speed.
 
 ## Build installers
 
 ```bash
-npm run build
+scripts/build-engine.sh
+npm run build -- --config src-tauri/tauri.engine.conf.json
 ```
 
 Artifacts land in `src-tauri/target/release/bundle/` (`.msi`/`.exe` on Windows,
@@ -85,11 +131,17 @@ voxtray/
 │   │   ├── player.rs        # rodio audio + local process control
 │   │   ├── logging.rs       # voxtray.log (timings, never text)
 │   │   ├── commands.rs      # #[tauri::command] handlers
-│   │   └── tts/             # openai / elevenlabs / piper / local engines
+│   │   └── tts/             # openai / elevenlabs / piper / kokoro / local engines
+│   ├── engine/              # voxtray-engine: Kokoro in its own process
+│   │   ├── src/protocol.rs  # the stdio protocol (JSON lines)
+│   │   ├── src/client.rs    # the app's side of it
+│   │   ├── src/main.rs      # the engine binary
+│   │   └── src/kokoro.rs    # Kokoro via sherpa-onnx
 │   ├── icons/               # generated from icon-source.png
 │   ├── capabilities/        # Tauri permission grants
 │   ├── tauri.conf.json
 │   ├── tauri.dev.conf.json  # Voxtray Dev identity overlay
+│   ├── tauri.engine.conf.json  # bundles voxtray-engine (release builds)
 │   └── Cargo.toml
 └── .github/workflows/release.yml
 ```
