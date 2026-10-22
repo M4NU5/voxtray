@@ -74,7 +74,7 @@ fn base_data_dir() -> Option<PathBuf> {
 
 fn data_root() -> Result<PathBuf, String> {
     let mut d = base_data_dir().ok_or("could not resolve a data directory")?;
-    d.push("dev.harshal.voxtray");
+    d.push(crate::settings::app_id());
     fs::create_dir_all(&d).map_err(|e| format!("create data dir: {e}"))?;
     Ok(d)
 }

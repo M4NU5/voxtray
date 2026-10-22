@@ -3,6 +3,7 @@
 mod chunker;
 mod commands;
 mod download;
+mod logging;
 mod player;
 mod reader;
 mod reading;
@@ -16,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, WindowEvent};
-use tauri_plugin_autostart::{ManagerExt, MacosLauncher};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use player::Player;
@@ -153,7 +154,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 
     TrayIconBuilder::with_id("main-tray")
         .icon(icon)
-        .tooltip("Voxtray")
+        .tooltip(&app.package_info().name)
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -191,6 +192,18 @@ pub fn run() {
         ))
         .setup(|app| {
             let handle = app.handle().clone();
+
+            // Voxtray Dev runs under its own identifier (tauri.dev.conf.json).
+            settings::set_app_id(&app.config().identifier);
+            if let Ok(dir) = settings::config_dir() {
+                logging::init(&dir.join("voxtray.log"));
+            }
+            log::info!(
+                "{} {} started as {}",
+                app.package_info().name,
+                app.package_info().version,
+                settings::app_id()
+            );
 
             // Load persisted settings and set up shared state.
             let loaded = settings::load();

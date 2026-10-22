@@ -27,6 +27,35 @@ npm run dev
 
 This launches the app with hot-reloading of the Rust core and the static UI.
 
+## Voxtray Dev on Windows, from WSL
+
+`scripts/build-dev-windows.sh` cross-compiles **Voxtray Dev** with
+[cargo-xwin](https://github.com/rust-cross/cargo-xwin) (it also needs `clang`
+and `lld`) and copies it to `%LOCALAPPDATA%\VoxtrayDev\Voxtray Dev.exe`. Voxtray
+Dev uses its own identifier (`src-tauri/tauri.dev.conf.json`), so its settings,
+downloads, keychain entries and `voxtray.log` stay apart from an installed
+Voxtray. On Windows the log is at `%APPDATA%\dev.harshal.voxtray.dev\voxtray.log`.
+
+## Tests
+
+```bash
+cd src-tauri
+cargo test
+cargo clippy --all-targets
+```
+
+Tests that need a real Piper binary and voice are ignored by default:
+
+```bash
+VOXTRAY_PIPER_EXE=/path/to/piper VOXTRAY_PIPER_MODEL=/path/to/voice.onnx \
+  cargo test -- --ignored piper
+```
+
+`render_passage_with_piper` (also ignored) reads a text file through the whole
+pipeline, writes the audio to a WAV and checks every chunk was ready before
+real-time playback needed it. Set `VOXTRAY_RENDER_TEXT` and `VOXTRAY_RENDER_WAV`
+as well, and run it with `--release --nocapture`.
+
 ## Build installers
 
 ```bash
@@ -49,13 +78,18 @@ voxtray/
 │   │   ├── main.rs          # binary entry point
 │   │   ├── lib.rs           # app setup, tray, hotkeys, plugins
 │   │   ├── settings.rs      # config file + OS keychain
-│   │   ├── reader.rs        # capture selection → speak
+│   │   ├── reader.rs        # capture selection → speak; hotkey actions
+│   │   ├── chunker.rs       # text → sentence-sized chunks
+│   │   ├── reading.rs       # one reading: synthesis ahead, pause, skip, stop
+│   │   ├── timeline.rs      # decoded PCM + play cursor (rodio source)
 │   │   ├── player.rs        # rodio audio + local process control
+│   │   ├── logging.rs       # voxtray.log (timings, never text)
 │   │   ├── commands.rs      # #[tauri::command] handlers
-│   │   └── tts/             # openai / elevenlabs / local engines
+│   │   └── tts/             # openai / elevenlabs / piper / local engines
 │   ├── icons/               # generated from icon-source.png
 │   ├── capabilities/        # Tauri permission grants
 │   ├── tauri.conf.json
+│   ├── tauri.dev.conf.json  # Voxtray Dev identity overlay
 │   └── Cargo.toml
 └── .github/workflows/release.yml
 ```

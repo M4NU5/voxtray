@@ -6,13 +6,28 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
-const KEYRING_SERVICE: &str = "dev.harshal.voxtray";
+/// The bundle identifier this build runs as. Voxtray Dev has its own, so its
+/// settings, downloads, log and keychain entries stay apart from the installed
+/// app. Also the keychain service name.
+static APP_ID: OnceLock<String> = OnceLock::new();
+const DEFAULT_APP_ID: &str = "dev.harshal.voxtray";
+
+/// Set once at startup from the Tauri config.
+pub fn set_app_id(id: &str) {
+    let _ = APP_ID.set(id.to_string());
+}
+
+pub fn app_id() -> &'static str {
+    APP_ID.get().map_or(DEFAULT_APP_ID, String::as_str)
+}
 
 /// Which text-to-speech engine to use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
+    #[default]
     Openai,
     Elevenlabs,
     /// Free, offline, neural local voice (downloaded on first use).
@@ -97,18 +112,16 @@ impl Default for Settings {
     }
 }
 
-impl Default for Provider {
-    fn default() -> Self {
-        Provider::Openai
-    }
+/// This build's config folder, holding settings.json and voxtray.log.
+pub fn config_dir() -> Result<PathBuf, String> {
+    let mut dir = dirs_config_dir().ok_or("could not resolve a config directory")?;
+    dir.push(app_id());
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create config dir: {e}"))?;
+    Ok(dir)
 }
 
 fn config_path() -> Result<PathBuf, String> {
-    let mut dir = dirs_config_dir().ok_or("could not resolve a config directory")?;
-    dir.push("dev.harshal.voxtray");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create config dir: {e}"))?;
-    dir.push("settings.json");
-    Ok(dir)
+    Ok(config_dir()?.join("settings.json"))
 }
 
 /// Minimal config-dir resolution without pulling in the `dirs` crate.
@@ -157,7 +170,7 @@ pub fn save(settings: &Settings) -> Result<(), String> {
 // --- Secure API key storage ---------------------------------------------------
 
 fn entry(account: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYRING_SERVICE, account).map_err(|e| format!("keychain: {e}"))
+    keyring::Entry::new(app_id(), account).map_err(|e| format!("keychain: {e}"))
 }
 
 /// Store (or clear, if `key` is empty) a provider's API key in the OS keychain.
