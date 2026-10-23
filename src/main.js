@@ -47,6 +47,7 @@ function applySettings(s) {
 
   $("read-hotkey").value = s.read_hotkey;
   $("stop-hotkey").value = s.stop_hotkey;
+  $("read-tap-key").value = s.read_tap_key;
   $("hk-hint").textContent = s.read_hotkey;
 }
 
@@ -55,6 +56,7 @@ function gatherSettings() {
     provider: currentProvider,
     read_hotkey: $("read-hotkey").value,
     stop_hotkey: $("stop-hotkey").value,
+    read_tap_key: $("read-tap-key").value,
     restore_clipboard: $("restore-clipboard").checked,
     speed: parseFloat($("speed").value),
     launch_at_startup: $("launch-startup").checked,
@@ -355,6 +357,11 @@ function setupHotkeyInput(id) {
 }
 setupHotkeyInput("read-hotkey");
 setupHotkeyInput("stop-hotkey");
+
+// The single-key tap uses a Windows keyboard hook.
+if (!navigator.userAgent.includes("Windows")) {
+  $("read-tap-key-field").style.display = "none";
+}
 
 // ---------------------------------------------------------------------------
 // Actions

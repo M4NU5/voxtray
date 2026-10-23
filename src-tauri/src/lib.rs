@@ -8,6 +8,7 @@ mod player;
 mod reader;
 mod reading;
 mod settings;
+mod tap_key;
 mod timeline;
 mod tts;
 
@@ -26,6 +27,9 @@ use settings::Settings;
 
 /// (Re)register the read/stop global shortcuts from the given settings.
 pub fn register_hotkeys(app: &AppHandle, settings: &Settings) -> Result<(), String> {
+    #[cfg(windows)]
+    tap_key::set_key(&settings.read_tap_key);
+
     let gs = app.global_shortcut();
     let _ = gs.unregister_all();
 
@@ -235,6 +239,11 @@ pub fn run() {
                     loaded.stop_hotkey
                 ),
                 Err(e) => log::error!("failed to register hotkeys: {e}"),
+            }
+
+            #[cfg(windows)]
+            if let Err(e) = tap_key::start(handle.clone()) {
+                log::error!("{e}");
             }
 
             // System tray.

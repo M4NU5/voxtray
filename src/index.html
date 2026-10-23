@@ -176,11 +176,37 @@
           <span>Read selection</span>
           <input type="text" id="read-hotkey" class="hotkey" readonly placeholder="Click, then press keys" />
         </label>
+        <label class="field" id="read-tap-key-field">
+          <span>Or tap one key on its own</span>
+          <select id="read-tap-key">
+            <option value="">Off</option>
+            <option value="rightCtrl">Right Ctrl</option>
+            <option value="rightAlt">Right Alt</option>
+            <option value="rightShift">Right Shift</option>
+            <option value="scrollLock">Scroll Lock</option>
+            <option value="pause">Pause</option>
+            <option value="f13">F13</option>
+            <option value="f14">F14</option>
+            <option value="f15">F15</option>
+            <option value="f16">F16</option>
+            <option value="f17">F17</option>
+            <option value="f18">F18</option>
+            <option value="f19">F19</option>
+            <option value="f20">F20</option>
+            <option value="f21">F21</option>
+            <option value="f22">F22</option>
+            <option value="f23">F23</option>
+            <option value="f24">F24</option>
+          </select>
+        </label>
         <label class="field">
           <span>Stop reading</span>
           <input type="text" id="stop-hotkey" class="hotkey" readonly placeholder="Click, then press keys" />
         </label>
-        <p class="hint">Click a box and press your key combination.</p>
+        <p class="hint">
+          Click a box and press your key combination. A tapped key does nothing
+          when you use it in a shortcut or with the mouse.
+        </p>
         <p class="hint">
           While reading, press the read hotkey again to pause or resume, and
           <span>Ctrl/Cmd+Alt+←</span> / <span>→</span> to skip 5 seconds.

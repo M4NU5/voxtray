@@ -5572,6 +5572,7 @@ dependencies = [
  "tauri-plugin-opener",
  "unicode-segmentation",
  "voxtray-engine",
+ "windows-sys 0.61.2",
  "zip",
 ]
 
