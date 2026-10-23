@@ -32,9 +32,10 @@ This launches the app with hot-reloading of the Rust core and the static UI.
 Kokoro runs in `voxtray-engine`, a separate program. Its crate is
 `src-tauri/engine`, a member of the Cargo workspace. It links the
 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) static libraries, which
-the `sherpa-onnx` crate downloads on its first build. Voxtray starts one per
-reading and talks to it over stdin and stdout, using the JSON-lines protocol in
-`src-tauri/engine/src/protocol.rs`.
+the `sherpa-onnx` crate downloads on its first build. Voxtray starts one when a
+reading needs it and talks to it over stdin and stdout, using the JSON-lines
+protocol in `src-tauri/engine/src/protocol.rs`. It stays loaded for ten minutes
+after a reading, so the next one skips the model load.
 
 It is separate because sherpa-onnx includes espeak-ng, which is
 GPL-3.0-or-later. The app only depends on the crate's protocol and client, with

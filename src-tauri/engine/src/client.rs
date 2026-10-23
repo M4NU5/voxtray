@@ -101,6 +101,12 @@ impl Client {
         }
     }
 
+    /// Whether the engine process is still running.
+    pub fn is_running(&self) -> bool {
+        let mut child = self.child.lock().unwrap_or_else(|e| e.into_inner());
+        matches!(child.try_wait(), Ok(None))
+    }
+
     /// Wait for the engine to load, once. Checks it speaks our protocol.
     pub fn ready(&mut self) -> Result<&Ready, String> {
         if self.ready.is_none() {

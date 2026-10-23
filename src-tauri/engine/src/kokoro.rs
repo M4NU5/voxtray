@@ -3,6 +3,7 @@
 use std::path::Path;
 
 use sherpa_onnx::{GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsKokoroModelConfig};
+use voxtray_engine::kokoro_lexicon;
 use voxtray_engine::protocol::Backend;
 
 /// Voice names in speaker-id order for `kokoro-multi-lang-v1_0`. From
@@ -70,17 +71,6 @@ pub fn sid(voice: &str) -> Option<i32> {
     VOICES.iter().position(|v| *v == voice).map(|i| i as i32)
 }
 
-/// British voices (`bf_`, `bm_`) read with the British lexicon. Words not in
-/// it fall back to espeak-ng's US English: the bundled espeak data has no
-/// en-gb voice, so setting a language would fail.
-fn lexicon(voice: &str) -> &'static str {
-    if voice.starts_with('b') {
-        "lexicon-gb-en.txt"
-    } else {
-        "lexicon-us-en.txt"
-    }
-}
-
 pub struct Kokoro {
     tts: OfflineTts,
     rate: u32,
@@ -96,7 +86,7 @@ impl Kokoro {
             voices: file("voices.bin"),
             tokens: file("tokens.txt"),
             data_dir: file("espeak-ng-data"),
-            lexicon: file(lexicon(voice)),
+            lexicon: file(kokoro_lexicon(voice)),
             ..Default::default()
         };
         config.model.num_threads = threads;
@@ -153,11 +143,5 @@ mod tests {
         assert_eq!(sid("zm_yunyang"), Some(52));
         assert_eq!(sid("em_santa"), Some(53));
         assert_eq!(sid("nobody"), None);
-    }
-
-    #[test]
-    fn british_voices_use_the_british_lexicon() {
-        assert_eq!(lexicon("bf_emma"), "lexicon-gb-en.txt");
-        assert_eq!(lexicon("af_heart"), "lexicon-us-en.txt");
     }
 }
