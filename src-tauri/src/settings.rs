@@ -58,6 +58,9 @@ pub struct Settings {
     pub read_hotkey: String,
     /// Global hotkey that stops playback.
     pub stop_hotkey: String,
+    /// A key that reads when tapped on its own, as an id from
+    /// [`crate::tap_key::KEYS`]. Empty for none. Windows only.
+    pub read_tap_key: String,
     /// Restore the user's previous clipboard contents after capturing selection.
     pub restore_clipboard: bool,
     /// Playback speed multiplier (0.5 - 2.0 for cloud providers).
@@ -94,6 +97,7 @@ impl Default for Settings {
             provider: Provider::Openai,
             read_hotkey: "CmdOrControl+Alt+R".into(),
             stop_hotkey: "CmdOrControl+Alt+S".into(),
+            read_tap_key: String::new(),
             restore_clipboard: true,
             speed: 1.0,
             launch_at_startup: false,

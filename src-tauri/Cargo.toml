@@ -56,6 +56,15 @@ voxtray-engine = { path = "engine", default-features = false }
 # Unpacking the Kokoro model archive (.tar.bz2). Pure Rust by default.
 bzip2 = "0.6"
 
+# The low-level keyboard hook behind the single-key read tap.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [dev-dependencies]
 # Property tests for the chunker.
 proptest = { version = "1", default-features = false, features = ["std"] }
