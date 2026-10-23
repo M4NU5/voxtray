@@ -97,13 +97,26 @@ impl Tap {
                 Some(down) => !self.spoiled && at.wrapping_sub(down) <= TAP_MAX_MS,
                 None => false,
             },
-            Input::Down(..) | Input::Mouse => {
+            Input::Down(..) | Input::Up(..) | Input::Mouse => {
                 self.spoiled |= self.down_at.is_some();
                 false
             }
-            Input::Up(..) => false,
         }
     }
+}
+
+/// On AltGr layouts (UK and most of Europe), Windows sends a Left Ctrl event
+/// with this scan code before each Right Alt event. It isn't a real key.
+pub const ALTGR_CTRL_SCAN: u32 = 0x21D;
+
+/// Whether key `k` being down stops a press of `tap` from being a tap. The
+/// generic Shift, Ctrl and Alt codes mirror the sided ones, including the
+/// tap key itself. For Right Alt, Left Ctrl may be AltGr's synthetic one.
+fn counts_as_other(k: u16, tap: u16) -> bool {
+    const GENERIC: [u16; 3] = [0x10, 0x11, 0x12];
+    const LEFT_CTRL: u16 = 0xA2;
+    const RIGHT_ALT: u16 = 0xA5;
+    k != tap && !GENERIC.contains(&k) && !(tap == RIGHT_ALT && k == LEFT_CTRL)
 }
 
 #[cfg(windows)]
@@ -121,8 +134,8 @@ mod hook {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, TranslateMessage,
-        HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, MSG, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN,
-        WM_KEYUP, WM_MOUSEMOVE, WM_SYSKEYDOWN, WM_SYSKEYUP,
+        UnhookWindowsHookEx, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, MSG, WH_KEYBOARD_LL,
+        WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_MOUSEMOVE, WM_SYSKEYDOWN, WM_SYSKEYUP,
     };
 
     static TAP: Mutex<Tap> = Mutex::new(Tap {
@@ -166,7 +179,17 @@ mod hook {
                 let module = GetModuleHandleW(null());
                 let keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), module, 0);
                 let mouse = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse), module, 0);
-                let _ = ready.send(!keyboard.is_null() && !mouse.is_null());
+                if keyboard.is_null() || mouse.is_null() {
+                    // Without the mouse hook, Ctrl+scroll would read. Use neither.
+                    for hook in [keyboard, mouse] {
+                        if !hook.is_null() {
+                            UnhookWindowsHookEx(hook);
+                        }
+                    }
+                    let _ = ready.send(false);
+                    return;
+                }
+                let _ = ready.send(true);
                 // The hooks live as long as the app, so they're never removed.
                 let mut message: MSG = std::mem::zeroed();
                 while GetMessageW(&mut message, null_mut(), 0, 0) > 0 {
@@ -197,8 +220,10 @@ mod hook {
     unsafe extern "system" fn keyboard(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if code == HC_ACTION as i32 {
             let event = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
-            // Skip Voxtray's own synthetic Ctrl+C.
-            if event.dwExtraInfo != enigo::EVENT_MARKER as usize {
+            // Skip Voxtray's own synthetic Ctrl+C, and AltGr's extra Ctrl.
+            if event.dwExtraInfo != enigo::EVENT_MARKER as usize
+                && event.scanCode != super::ALTGR_CTRL_SCAN
+            {
                 let vk = sided(event);
                 let input = match wparam as u32 {
                     WM_KEYDOWN | WM_SYSKEYDOWN => Some(Input::Down(vk, event.time)),
@@ -220,12 +245,11 @@ mod hook {
         unsafe { CallNextHookEx(null_mut(), code, wparam, lparam) }
     }
 
-    /// Whether any key or mouse button other than `vk` is down. The generic
-    /// Shift, Ctrl and Alt codes are skipped: they mirror the sided ones,
-    /// including the tap key itself.
+    /// Whether any other key or mouse button that rules out a tap of `vk`
+    /// is down.
     fn others_held(vk: u16) -> bool {
         (1..=0xFEu16)
-            .filter(|&k| k != vk && !matches!(k, VK_SHIFT | VK_CONTROL | VK_MENU))
+            .filter(|&k| super::counts_as_other(k, vk))
             .any(|k| unsafe { GetAsyncKeyState(i32::from(k)) as u16 & 0x8000 != 0 })
     }
 
@@ -297,6 +321,34 @@ mod tests {
             ],
         );
         assert!(fired.iter().all(|f| !f));
+    }
+
+    #[test]
+    fn another_key_released_while_held_is_not_a_tap() {
+        let mut t = tap();
+        let fired = run(
+            &mut t,
+            &[
+                Input::Down(RCTRL, 1000),
+                Input::Up(C, 1050),
+                Input::Up(RCTRL, 1100),
+            ],
+        );
+        assert!(fired.iter().all(|f| !f));
+    }
+
+    #[test]
+    fn altgr_ctrl_does_not_block_a_right_alt_tap() {
+        const LCTRL: u16 = 0xA2;
+        const RALT: u16 = 0xA5;
+        assert!(!counts_as_other(LCTRL, RALT));
+        assert!(counts_as_other(LCTRL, RCTRL));
+        assert!(counts_as_other(C, RALT));
+        assert!(
+            !counts_as_other(0x11, RCTRL),
+            "generic Ctrl mirrors the tap key"
+        );
+        assert!(!counts_as_other(RCTRL, RCTRL));
     }
 
     #[test]
