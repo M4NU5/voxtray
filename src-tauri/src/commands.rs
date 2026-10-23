@@ -134,6 +134,34 @@ pub fn ensure_piper(app: AppHandle, voice: String) {
     });
 }
 
+#[derive(Serialize)]
+pub struct KokoroStatus {
+    pub engine: bool,
+    pub model: bool,
+}
+
+#[tauri::command]
+pub fn kokoro_status() -> KokoroStatus {
+    KokoroStatus {
+        engine: tts::kokoro::engine_exe().is_ok(),
+        model: download::kokoro_model_installed(),
+    }
+}
+
+/// Download the Kokoro model (if missing). Runs on a worker thread and
+/// reports progress via `kokoro-progress`; finishes with `kokoro-done`.
+#[tauri::command]
+pub fn ensure_kokoro(app: AppHandle) {
+    std::thread::spawn(move || {
+        if download::kokoro_model_installed() {
+            let _ = app.emit("kokoro-done", serde_json::json!({ "ok": true }));
+        } else {
+            // Emits kokoro-done itself, also when a reading started it.
+            let _ = download::ensure_kokoro_model(&app);
+        }
+    });
+}
+
 #[tauri::command]
 pub fn read_now(app: AppHandle) {
     reader::read_selection(&app);

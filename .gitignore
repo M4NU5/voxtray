@@ -4,6 +4,8 @@ node_modules/
 # Rust / Tauri build output
 src-tauri/target/
 src-tauri/gen/
+# The Kokoro engine, built by scripts/build-engine.sh for bundling
+src-tauri/binaries/
 
 # Assembled installers for local testing
 dist/

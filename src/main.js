@@ -20,6 +20,7 @@ async function boot() {
     await loadLocalVoices(s.local_voice);
     await loadPiperVoices(s.piper_voice);
     await refreshPiperStatus();
+    await refreshKokoroStatus();
     updateStatus();
   } catch (e) {
     setStatus("Failed to load settings: " + e, true);
@@ -36,7 +37,6 @@ function applySettings(s) {
   $("elevenlabs-model").value = s.elevenlabs_model;
   $("elevenlabs-voice").value = s.elevenlabs_voice_id;
   if (s.kokoro_voice) $("kokoro-voice").value = s.kokoro_voice;
-  if (s.kokoro_dtype) $("kokoro-dtype").value = s.kokoro_dtype;
   $("local-rate").value = s.local_rate;
   $("rate-out").textContent = s.local_rate;
 
@@ -64,7 +64,6 @@ function gatherSettings() {
     elevenlabs_voice_id: $("elevenlabs-voice").value.trim(),
     piper_voice: $("piper-voice").value,
     kokoro_voice: $("kokoro-voice").value,
-    kokoro_dtype: $("kokoro-dtype").value,
     local_voice: $("local-voice").value,
     local_rate: parseInt($("local-rate").value, 10),
   };
@@ -86,6 +85,7 @@ document.querySelectorAll('input[name="provider"]').forEach((r) => {
     currentProvider = e.target.value;
     showPanel(currentProvider);
     if (currentProvider === "piper") refreshPiperStatus();
+    if (currentProvider === "kokoro") refreshKokoroStatus();
     updateStatus();
   });
 });
@@ -213,128 +213,55 @@ listen("hd-done", async (e) => {
 });
 
 // ---------------------------------------------------------------------------
-// Kokoro (beta) — neural TTS running in the webview via kokoro-js
+// Kokoro (beta) — runs in the bundled voxtray-engine; the model downloads once
 // ---------------------------------------------------------------------------
-let kokoroTTS = null;
-let kokoroLoadingFor = null; // dtype currently being/loaded
-let kokoroLoadPromise = null;
-let kokoroCtx = null;
-let kokoroSource = null;
-
 function setKokoroStatus(text, kind) {
   const el = $("kokoro-status");
-  if (!el) return;
   el.textContent = text;
   el.className = "key-status " + (kind === "ok" ? "ok" : kind === "err" ? "err" : "");
 }
 
-async function ensureKokoro(dtype) {
-  dtype = dtype || "q8";
-  if (kokoroTTS && kokoroLoadingFor === dtype) return kokoroTTS;
-  if (kokoroLoadPromise && kokoroLoadingFor === dtype) return kokoroLoadPromise;
+let kokoroBusy = false;
 
-  kokoroLoadingFor = dtype;
-  kokoroTTS = null;
-  setKokoroStatus("Loading model (first time downloads once)…", "");
-
-  kokoroLoadPromise = (async () => {
-    const mod = await import("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm");
-    const KokoroTTS = mod.KokoroTTS;
-
-    // Prefer WebGPU when the webview supports it; otherwise fall back to WASM.
-    let device = "wasm";
-    try {
-      if (navigator.gpu && (await navigator.gpu.requestAdapter())) device = "webgpu";
-    } catch (_) {
-      device = "wasm";
-    }
-
-    const tts = await KokoroTTS.from_pretrained(
-      "onnx-community/Kokoro-82M-v1.0-ONNX",
-      {
-        dtype,
-        device,
-        progress_callback: (p) => {
-          if (p && p.status === "progress" && p.file) {
-            const pct = Math.round(p.progress || 0);
-            setKokoroStatus(`Downloading ${p.file} … ${pct}%`, "");
-          }
-        },
-      }
-    );
-    kokoroTTS = tts;
-    setKokoroStatus(`✓ Model ready (${device})`, "ok");
-    return tts;
-  })();
-
+async function refreshKokoroStatus() {
+  if (kokoroBusy) return; // keep showing download progress
   try {
-    return await kokoroLoadPromise;
-  } catch (e) {
-    kokoroLoadPromise = null;
-    kokoroLoadingFor = null;
-    setKokoroStatus("Load failed: " + (e && e.message ? e.message : e), "err");
-    throw e;
+    const st = await invoke("kokoro_status");
+    if (!st.engine) setKokoroStatus("Kokoro engine missing — reinstall Voxtray.", "err");
+    else if (st.model) setKokoroStatus("✓ Downloaded — ready offline", "ok");
+    else setKokoroStatus("Not downloaded yet — click Download (~350 MB).", "");
+    $("kokoro-download").disabled = kokoroBusy || !st.engine || st.model;
+  } catch (_) {
+    /* ignore */
   }
 }
 
-function kokoroStop() {
-  if (kokoroSource) {
-    try {
-      kokoroSource.stop();
-    } catch (_) {}
-    kokoroSource = null;
-  }
-}
-
-async function playSamples(float32, sampleRate) {
-  if (!kokoroCtx) kokoroCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if (kokoroCtx.state === "suspended") {
-    try {
-      await kokoroCtx.resume();
-    } catch (_) {}
-  }
-  const buffer = kokoroCtx.createBuffer(1, float32.length, sampleRate);
-  buffer.copyToChannel(float32, 0);
-  const src = kokoroCtx.createBufferSource();
-  src.buffer = buffer;
-  src.connect(kokoroCtx.destination);
-  kokoroStop();
-  kokoroSource = src;
-  src.start();
-}
-
-async function kokoroSpeak(text, voice, speed, dtype) {
+$("kokoro-download").addEventListener("click", async () => {
+  if (kokoroBusy) return;
+  kokoroBusy = true;
+  $("kokoro-download").disabled = true;
+  setKokoroStatus("Starting download…", "");
   try {
-    const tts = await ensureKokoro(dtype);
-    setKokoroStatus("Synthesizing…", "");
-    const out = await tts.generate(text, { voice: voice || "af_heart", speed: speed || 1 });
-    // kokoro-js returns a RawAudio with `.audio` (Float32Array) + `.sampling_rate`.
-    await playSamples(out.audio, out.sampling_rate);
-    setKokoroStatus("▶ Playing", "ok");
+    await invoke("ensure_kokoro");
   } catch (e) {
-    setKokoroStatus("Error: " + (e && e.message ? e.message : e), "err");
+    setKokoroStatus("Could not start: " + e, "err");
+    kokoroBusy = false;
+    $("kokoro-download").disabled = false;
   }
-}
-
-listen("kokoro-speak", (e) => {
-  const p = e.payload || {};
-  kokoroSpeak(p.text, p.voice, p.speed, p.dtype);
 });
-listen("kokoro-stop", () => kokoroStop());
 
-$("kokoro-load").addEventListener("click", async () => {
-  $("kokoro-load").disabled = true;
-  try {
-    await kokoroSpeak(
-      "Kokoro is ready. This is how your selected text will sound.",
-      $("kokoro-voice").value,
-      parseFloat($("speed").value),
-      $("kokoro-dtype").value
-    );
-  } finally {
-    $("kokoro-load").disabled = false;
-    updateStatus();
+listen("kokoro-progress", (e) => {
+  if (e.payload && e.payload.message) setKokoroStatus(e.payload.message, "");
+});
+listen("kokoro-done", async (e) => {
+  kokoroBusy = false;
+  if (e.payload && e.payload.ok) {
+    await refreshKokoroStatus();
+  } else {
+    setKokoroStatus("Download failed: " + (e.payload && e.payload.error), "err");
+    $("kokoro-download").disabled = false;
   }
+  updateStatus();
 });
 
 // ---------------------------------------------------------------------------
@@ -363,6 +290,10 @@ async function updateStatus() {
     const st = await invoke("piper_status", { voice: $("piper-voice").value });
     ready = st.engine && st.voice;
     hint = "download the voice to start";
+  } else if (currentProvider === "kokoro") {
+    const st = await invoke("kokoro_status");
+    ready = st.engine && st.model;
+    hint = st.engine ? "download the model to start" : "reinstall to restore its engine";
   }
   setStatus(
     ready

@@ -51,6 +51,11 @@ It runs quietly in the tray and can start automatically at login.
 that runs entirely on your machine. The engine and your chosen voice (~50 MB)
 download once on first use, then work offline with no key and no cost.
 
+**Kokoro** is a free neural voice ([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M))
+that also runs on your machine, in `voxtray-engine`, a separate program installed
+with Voxtray. The model is about 350 MB and downloads once, on first use. Each
+reading takes a few seconds to start while the model loads.
+
 Pick whichever you like in Settings and switch anytime. Your API keys are stored
 in the operating system's secure keychain — never in a plaintext file.
 
@@ -102,7 +107,8 @@ Details in [PRIVACY.md](PRIVACY.md).
 
 Voxtray is free, open source software under the [MIT License](LICENSE). Contributions welcome: see
 [CONTRIBUTING.md](CONTRIBUTING.md). Third-party components and their licences are listed in
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Report security issues privately as described in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). The Kokoro engine that installs with Voxtray, `voxtray-engine`,
+includes espeak-ng, so that one program falls under the GPL-3.0-or-later. Report security issues privately as described in
 [SECURITY.md](SECURITY.md).
 
 Voxtray is provided as is, without warranty of any kind. Cloud voices are billed by their providers to your own

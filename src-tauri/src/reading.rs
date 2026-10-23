@@ -268,7 +268,11 @@ mod tests {
 
     /// Poll `f` until it holds or the wait runs out.
     fn eventually(f: impl Fn() -> bool) -> bool {
-        let deadline = Instant::now() + WAIT;
+        eventually_within(WAIT, f)
+    }
+
+    fn eventually_within(wait: Duration, f: impl Fn() -> bool) -> bool {
+        let deadline = Instant::now() + wait;
         while Instant::now() < deadline {
             if f() {
                 return true;
@@ -459,35 +463,35 @@ mod tests {
         assert!(!b.is_active());
     }
 
-    /// Renders a real passage through the real pipeline (chunker, warm Piper,
-    /// reading worker, timeline source) and reports, per chunk, when its audio
-    /// was ready versus when real-time playback would need it.
+    fn var(k: &str) -> String {
+        std::env::var(k).unwrap_or_else(|_| panic!("set {k}"))
+    }
+
+    /// Renders a real passage through the real pipeline (chunker, a warm
+    /// engine from `open`, reading worker, timeline source) and reports, per
+    /// chunk, when its audio was ready versus when real-time playback would
+    /// need it. Opening the engine counts towards the first audio.
     ///
-    /// `VOXTRAY_PIPER_EXE`, `VOXTRAY_PIPER_MODEL`, `VOXTRAY_RENDER_TEXT` (input
-    /// file) and `VOXTRAY_RENDER_WAV` (output) must be set.
-    #[test]
-    #[ignore = "needs a Piper binary, a voice and a text file"]
-    fn render_passage_with_piper() {
-        use crate::tts::piper::Engine;
+    /// `VOXTRAY_RENDER_TEXT` (input file) and `VOXTRAY_RENDER_WAV` (output)
+    /// must be set.
+    fn render_passage<O, S>(open: O)
+    where
+        O: FnOnce() -> S,
+        S: FnMut(&str) -> Result<Pcm, String> + Send + 'static,
+    {
         use rodio::Source;
         use std::io::Write;
 
-        let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("set {k}"));
         let text = std::fs::read_to_string(var("VOXTRAY_RENDER_TEXT")).unwrap();
         let chunks = crate::chunker::chunk(&text);
         let n = chunks.len();
 
         let started = Instant::now();
-        let mut engine = Engine::spawn(
-            var("VOXTRAY_PIPER_EXE").as_ref(),
-            var("VOXTRAY_PIPER_MODEL").as_ref(),
-            1.0,
-        )
-        .unwrap();
+        let mut engine = open();
         let ready = Arc::new(Mutex::new(Vec::new()));
         let r2 = ready.clone();
         let synth = move |chunk: &str| {
-            let pcm = engine.synthesize(chunk);
+            let pcm = engine(chunk);
             r2.lock().unwrap().push(started.elapsed());
             pcm
         };
@@ -496,9 +500,11 @@ mod tests {
 
         // Play like a device that never underruns: before the source refills,
         // wait until the timeline has audio past the cursor (or is complete).
-        assert!(eventually(
-            || r.shared.with(|t| t.buffered()) > Duration::ZERO
-        ));
+        // A slow engine's first chunk can take longer than WAIT.
+        assert!(eventually_within(Duration::from_secs(60), || r
+            .shared
+            .with(|t| t.buffered())
+            > Duration::ZERO));
         let first_audio = started.elapsed();
         let mut src = TimelineSource::new(r.shared.clone());
         let rate = src.sample_rate();
@@ -553,5 +559,33 @@ mod tests {
             audio.as_secs_f64(),
             worst.as_millis()
         );
+    }
+
+    /// Also needs `VOXTRAY_PIPER_EXE` and `VOXTRAY_PIPER_MODEL`.
+    #[test]
+    #[ignore = "needs a Piper binary, a voice and a text file"]
+    fn render_passage_with_piper() {
+        use crate::tts::piper::Engine;
+        render_passage(|| {
+            let exe = var("VOXTRAY_PIPER_EXE");
+            let model = var("VOXTRAY_PIPER_MODEL");
+            let mut engine = Engine::spawn(exe.as_ref(), model.as_ref(), 1.0).unwrap();
+            move |chunk: &str| engine.synthesize(chunk)
+        });
+    }
+
+    /// Also needs `VOXTRAY_ENGINE_EXE` and `VOXTRAY_KOKORO_MODEL`.
+    /// `VOXTRAY_RENDER_SPEED` sets the speed (default 1).
+    #[test]
+    #[ignore = "needs voxtray-engine, the Kokoro model and a text file"]
+    fn render_passage_with_kokoro() {
+        use crate::tts::kokoro::{engine_exe, Engine};
+        render_passage(|| {
+            let model = var("VOXTRAY_KOKORO_MODEL");
+            let speed = std::env::var("VOXTRAY_RENDER_SPEED").map_or(1.0, |s| s.parse().unwrap());
+            let mut engine =
+                Engine::spawn(&engine_exe().unwrap(), model.as_ref(), "af_heart", speed).unwrap();
+            move |chunk: &str| engine.synthesize(chunk)
+        });
     }
 }

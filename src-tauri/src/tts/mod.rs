@@ -1,13 +1,16 @@
 //! Text-to-speech providers.
 //!
-//! Piper and the cloud providers synthesise one chunk at a time through a
-//! [`ChunkEngine`] opened once per reading. The system voice speaks the whole
-//! text itself (see [`local`]). Kokoro runs in the webview.
+//! Piper, Kokoro and the cloud providers synthesise one chunk at a time
+//! through a [`ChunkEngine`] opened once per reading. The system voice speaks
+//! the whole text itself (see [`local`]).
 
 pub mod elevenlabs;
+pub mod kokoro;
 pub mod local;
 pub mod openai;
 pub mod piper;
+
+use std::process::Command;
 
 use crate::settings::{Provider, Settings};
 use crate::timeline::Pcm;
@@ -16,6 +19,7 @@ use tauri::AppHandle;
 /// A provider ready to synthesise the chunks of one reading.
 pub enum ChunkEngine {
     Piper(piper::Engine),
+    Kokoro(kokoro::Engine),
     Openai(openai::Client),
     Elevenlabs(elevenlabs::Client),
 }
@@ -25,15 +29,17 @@ impl ChunkEngine {
     pub fn open(app: &AppHandle, settings: &Settings) -> Option<Result<ChunkEngine, String>> {
         Some(match settings.provider {
             Provider::Piper => piper::Engine::open(app, settings).map(ChunkEngine::Piper),
+            Provider::Kokoro => kokoro::Engine::open(app, settings).map(ChunkEngine::Kokoro),
             Provider::Openai => openai::Client::new(settings).map(ChunkEngine::Openai),
             Provider::Elevenlabs => elevenlabs::Client::new(settings).map(ChunkEngine::Elevenlabs),
-            Provider::Local | Provider::Kokoro => return None,
+            Provider::Local => return None,
         })
     }
 
     pub fn synthesize(&mut self, text: &str) -> Result<Pcm, String> {
         match self {
             ChunkEngine::Piper(e) => e.synthesize(text),
+            ChunkEngine::Kokoro(e) => e.synthesize(text),
             ChunkEngine::Openai(c) => c.synthesize(text),
             ChunkEngine::Elevenlabs(c) => c.synthesize(text),
         }
@@ -44,9 +50,22 @@ impl ChunkEngine {
     pub fn interrupter(&self) -> Option<Box<dyn FnOnce() + Send>> {
         match self {
             ChunkEngine::Piper(e) => Some(Box::new(e.killer())),
+            ChunkEngine::Kokoro(e) => Some(Box::new(e.killer())),
             _ => None,
         }
     }
+}
+
+/// Keep a local engine from opening a console window on Windows.
+fn hide_console(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    let _ = cmd;
 }
 
 /// Clamp a speed to a provider's range, rounded to the slider's precision so
