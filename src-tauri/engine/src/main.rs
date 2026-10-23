@@ -1,6 +1,6 @@
 //! `voxtray-engine`: Kokoro text-to-speech, driven by Voxtray over stdin and
-//! stdout with the protocol in [`voxtray_engine::protocol`]. Voxtray starts
-//! one per reading and kills it on stop.
+//! stdout with the protocol in [`voxtray_engine::protocol`]. Voxtray keeps
+//! one loaded for a while after each reading.
 //!
 //! ```text
 //! voxtray-engine --model-dir <dir> --out-dir <dir> [--voice af_heart] [--threads N]

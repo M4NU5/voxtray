@@ -9,6 +9,7 @@ pub mod kokoro;
 pub mod local;
 pub mod openai;
 pub mod piper;
+mod warm;
 
 use std::process::Command;
 
@@ -46,11 +47,11 @@ impl ChunkEngine {
     }
 
     /// Something that interrupts a synthesis in progress, if the engine can.
-    /// Cloud requests can't be aborted; their result is discarded instead.
+    /// Cloud requests can't be aborted, and Kokoro's are left to finish so
+    /// the engine stays warm. Their result is discarded instead.
     pub fn interrupter(&self) -> Option<Box<dyn FnOnce() + Send>> {
         match self {
             ChunkEngine::Piper(e) => Some(Box::new(e.killer())),
-            ChunkEngine::Kokoro(e) => Some(Box::new(e.killer())),
             _ => None,
         }
     }

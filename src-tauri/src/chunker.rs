@@ -1,9 +1,13 @@
 //! Splits selected text into sentence-sized chunks for synthesis.
 //!
-//! Chunks never cross a paragraph break. The first chunk is a single sentence
-//! so audio starts quickly. Later sentences in a paragraph are merged up to
-//! [`TARGET_CHARS`] for fewer requests and steadier intonation. Anything longer
-//! than [`MAX_CHARS`] is split at the last clause mark or space that fits.
+//! Chunks never cross a paragraph break. The first chunk is a single sentence,
+//! cut at a clause mark if it is longer than [`FIRST_CHARS`], so audio starts
+//! quickly. Chunks then ramp up: each is at most [`RAMP`] times the one before,
+//! so it is ready before that one finishes playing. While ramping, a sentence
+//! that is too long is cut at a clause mark, never mid-phrase. Once at
+//! [`TARGET_CHARS`], sentences in a paragraph are merged up to it for fewer
+//! requests and steadier intonation. Anything longer than [`MAX_CHARS`] is
+//! split at the last clause mark or space that fits.
 //!
 //! No text is dropped or reordered: only whitespace changes.
 
@@ -11,6 +15,15 @@ use unicode_segmentation::UnicodeSegmentation;
 
 /// Sentences in a paragraph are merged until a chunk would exceed this.
 pub const TARGET_CHARS: usize = 220;
+/// A first sentence longer than this is cut at a clause mark. Kokoro takes
+/// about 1 s to synthesise it on a fast CPU.
+pub const FIRST_CHARS: usize = 100;
+/// Each chunk is at most this many times the length of the one before. Kokoro
+/// synthesises about 5 times faster than real time on a fast CPU, so 3 leaves
+/// room for 1.5x speed.
+pub const RAMP: usize = 3;
+/// The ramp never asks for less: shorter input sounds worse and saves little.
+pub const MIN_CHARS: usize = 40;
 /// Hard upper bound on a chunk. Well under every provider's input limit.
 pub const MAX_CHARS: usize = 400;
 
@@ -26,16 +39,30 @@ pub fn chunk(text: &str) -> Vec<String> {
     for para in paragraphs(text) {
         let mut current = String::new();
         for sentence in sentences(&para) {
-            for piece in split_long(&sentence, MAX_CHARS) {
-                let fits = len(&current) + 1 + len(&piece) <= TARGET_CHARS;
-                // The very first sentence always stands alone.
-                if !current.is_empty() && (chunks.is_empty() || !fits) {
-                    chunks.push(std::mem::take(&mut current));
+            for mut piece in split_long(&sentence, MAX_CHARS) {
+                loop {
+                    let ramp = ramp(&chunks);
+                    let limit = ramp.min(TARGET_CHARS);
+                    let fits = len(&current) + 1 + len(&piece) <= limit;
+                    // The very first sentence always stands alone.
+                    if !current.is_empty() && (chunks.is_empty() || !fits) {
+                        chunks.push(std::mem::take(&mut current));
+                        continue;
+                    }
+                    // Cut a sentence too long for this step of the ramp.
+                    if current.is_empty() && len(&piece) > ramp {
+                        if let Some(at) = clause_cut(&piece, limit) {
+                            chunks.push(piece[..at].to_string());
+                            piece = piece[at..].trim_start().to_string();
+                            continue;
+                        }
+                    }
+                    if !current.is_empty() {
+                        current.push(' ');
+                    }
+                    current.push_str(&piece);
+                    break;
                 }
-                if !current.is_empty() {
-                    current.push(' ');
-                }
-                current.push_str(&piece);
             }
         }
         if !current.is_empty() {
@@ -43,6 +70,16 @@ pub fn chunk(text: &str) -> Vec<String> {
         }
     }
     chunks
+}
+
+/// How long the next chunk may be, given the chunks so far, before the cap
+/// of [`TARGET_CHARS`]. Past [`MAX_CHARS`] the ramp is over: no sentence
+/// piece is that long, so none is cut.
+fn ramp(chunks: &[String]) -> usize {
+    match chunks.last() {
+        None => FIRST_CHARS,
+        Some(prev) => (RAMP * len(prev)).max(MIN_CHARS),
+    }
 }
 
 fn len(s: &str) -> usize {
@@ -149,24 +186,13 @@ fn split_long(s: &str, max: usize) -> Vec<String> {
     let mut out = Vec::new();
     let mut rest = s.trim();
     while len(rest) > max {
-        let head_end = rest.char_indices().nth(max).map_or(rest.len(), |(i, _)| i);
-        let head = &rest[..head_end];
-        let min = rest.char_indices().nth(max / 3).map_or(0, |(i, _)| i);
-        let clause = head
-            .char_indices()
-            .rev()
-            .find(|&(i, c)| {
-                i >= min
-                    && matches!(c, ',' | ';' | ':' | '—' | '–' | ')')
-                    && head[i + c.len_utf8()..].starts_with(' ')
-            })
-            .map(|(i, c)| i + c.len_utf8());
+        let (head, min) = window(rest, max);
         let space = head
             .char_indices()
             .rev()
             .find(|&(i, c)| i >= min && c == ' ')
             .map(|(i, _)| i);
-        let cut = clause.or(space).unwrap_or(head_end);
+        let cut = clause_cut(rest, max).or(space).unwrap_or(head.len());
         out.push(rest[..cut].trim().to_string());
         rest = rest[cut..].trim_start();
     }
@@ -174,6 +200,28 @@ fn split_long(s: &str, max: usize) -> Vec<String> {
         out.push(rest.to_string());
     }
     out
+}
+
+/// Where to cut `s` to keep at most `max` chars: just after the last clause
+/// mark that fits and is followed by a space. None if there isn't one past
+/// the first third.
+fn clause_cut(s: &str, max: usize) -> Option<usize> {
+    let (head, min) = window(s, max);
+    head.char_indices()
+        .rev()
+        .find(|&(i, c)| {
+            i >= min
+                && matches!(c, ',' | ';' | ':' | '—' | '–' | ')')
+                && s[i + c.len_utf8()..].starts_with(' ')
+        })
+        .map(|(i, c)| i + c.len_utf8())
+}
+
+/// The first `max` chars of `s`, and the byte index a third of the way in.
+fn window(s: &str, max: usize) -> (&str, usize) {
+    let end = s.char_indices().nth(max).map_or(s.len(), |(i, _)| i);
+    let min = s.char_indices().nth(max / 3).map_or(0, |(i, _)| i);
+    (&s[..end], min)
 }
 
 #[cfg(test)]
@@ -192,6 +240,65 @@ mod tests {
     }
 
     #[test]
+    fn a_long_first_sentence_is_cut_at_a_clause_mark() {
+        let c = chunk(
+            "When the committee finally met on Tuesday afternoon to review the draft \
+             budget for the coming year, after weeks of delays caused by missing \
+             figures, the mood was tense but hopeful. The chair thanked everyone.",
+        );
+        assert_eq!(
+            c,
+            vec![
+                "When the committee finally met on Tuesday afternoon to review the draft \
+                 budget for the coming year,",
+                "after weeks of delays caused by missing figures, the mood was tense but \
+                 hopeful. The chair thanked everyone."
+            ]
+        );
+    }
+
+    #[test]
+    fn chunks_ramp_up_from_a_short_start() {
+        let clause = "and the fox ran on";
+        let s = format!("Go. Then {}.", [clause; 20].join(", "));
+        let lens: Vec<usize> = chunk(&s).iter().map(|c| len(c)).collect();
+        assert_eq!(lens[0], 3);
+        for pair in lens.windows(2) {
+            let allowed = (RAMP * pair[0]).clamp(MIN_CHARS, TARGET_CHARS);
+            assert!(pair[1] <= allowed, "{lens:?}");
+        }
+        assert!(lens.iter().any(|&n| n > 150), "reaches full size: {lens:?}");
+    }
+
+    #[test]
+    fn the_ramp_holds_after_reaching_full_size() {
+        let first = "This first sentence is long enough that three times it is over the target.";
+        let rest = ["the quick brown fox jumps over the lazy dog"; 7].join(", ");
+        let lens: Vec<usize> = chunk(&format!("{first} And {rest}."))
+            .iter()
+            .map(|c| len(c))
+            .collect();
+        assert_eq!(lens[0], len(first));
+        assert!(lens[1] <= TARGET_CHARS, "{lens:?}");
+    }
+
+    #[test]
+    fn a_clause_mark_right_at_the_limit_is_used() {
+        let s = format!("{}, {}.", "a".repeat(FIRST_CHARS - 1), "b".repeat(50));
+        let c = chunk(&s);
+        assert_eq!(len(&c[0]), FIRST_CHARS);
+        assert!(c[0].ends_with(','));
+    }
+
+    #[test]
+    fn the_ramp_never_cuts_mid_phrase() {
+        let long = "This study looks at how the timing of morning light changes the \
+                    sleep of sixty adults followed over one whole year.";
+        let c = chunk(&format!("Introduction\n{long}"));
+        assert_eq!(c, vec!["Introduction", long]);
+    }
+
+    #[test]
     fn empty_and_blank_input() {
         assert!(chunk("").is_empty());
         assert!(chunk(" \n\t\n ").is_empty());
@@ -204,7 +311,9 @@ mod tests {
             c,
             vec![
                 "Hi.",
-                "Dr. Smith met J. K. Rowling in the U.S. Army, e.g. on Monday. Bye."
+                // Already over the ramp's limit, so "Bye." doesn't join it.
+                "Dr. Smith met J. K. Rowling in the U.S. Army, e.g. on Monday.",
+                "Bye."
             ]
         );
     }
@@ -216,7 +325,8 @@ mod tests {
             c,
             vec![
                 "Start.",
-                "Pi is 3.14 and see example.com/a.b for more. Wait... what."
+                "Pi is 3.14 and see example.com/a.b for more.",
+                "Wait... what."
             ]
         );
     }

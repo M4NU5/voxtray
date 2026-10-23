@@ -44,6 +44,20 @@ fn a_crash_mid_request_reports_the_last_stderr_line() {
         engine.synthesize("crash", "v", 1.0),
         Err("Fake engine stopped unexpectedly: fake engine crashed".into())
     );
+    assert!(!engine.is_running());
+}
+
+#[test]
+fn an_engine_keeps_running_between_requests_until_killed() {
+    let mut engine = fake("Fake", &[]);
+    engine.synthesize("abc", "v", 1.0).unwrap();
+    assert!(engine.is_running());
+    engine.killer()();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while engine.is_running() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(!engine.is_running());
 }
 
 #[test]
