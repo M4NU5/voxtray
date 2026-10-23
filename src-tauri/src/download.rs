@@ -331,22 +331,25 @@ pub fn kokoro_model_installed() -> bool {
 /// for it, ends with `kokoro-done`.
 pub fn ensure_kokoro_model(app: &AppHandle) -> Result<PathBuf, String> {
     let _one_at_a_time = KOKORO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let dir = kokoro_model_dir()?;
-    if dir.join("model.onnx").exists() {
-        return Ok(dir);
+    let dir = kokoro_model_dir();
+    if let Ok(dir) = &dir {
+        if dir.join("model.onnx").exists() {
+            return Ok(dir.clone());
+        }
     }
     let started = std::time::Instant::now();
-    let result = download_kokoro(app, &dir);
+    // A data folder that can't be created fails here too, so the panel hears.
+    let result = dir.and_then(|dir| download_kokoro(app, &dir).map(|()| dir));
     match &result {
-        Ok(()) => log::info!("Kokoro model downloaded in {} s", started.elapsed().as_secs()),
+        Ok(_) => log::info!("Kokoro model downloaded in {} s", started.elapsed().as_secs()),
         Err(e) => log::warn!("Kokoro model download failed: {}", crate::logging::loggable(e)),
     }
     let done = match &result {
-        Ok(()) => json!({ "ok": true }),
+        Ok(_) => json!({ "ok": true }),
         Err(e) => json!({ "ok": false, "error": e }),
     };
     let _ = app.emit("kokoro-done", done);
-    result.map(|()| dir)
+    result
 }
 
 fn download_kokoro(app: &AppHandle, dir: &Path) -> Result<(), String> {
