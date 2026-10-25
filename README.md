@@ -53,8 +53,9 @@ download once on first use, then work offline with no key and no cost.
 
 **Kokoro** is a free neural voice ([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M))
 that also runs on your machine, in `voxtray-engine`, a separate program installed
-with Voxtray. The model is about 350 MB and downloads once, on first use. Each
-reading takes a few seconds to start while the model loads.
+with Voxtray. The model is about 350 MB and downloads once, on first use. The
+first reading waits about 2 seconds while the model loads. It then stays loaded
+for 10 minutes, so later readings start right away.
 
 Pick whichever you like in Settings and switch anytime. Your API keys are stored
 in the operating system's secure keychain — never in a plaintext file.
