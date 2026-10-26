@@ -156,8 +156,11 @@ pub fn clock(position: Duration) -> String {
 /// The key is empty when there isn't one.
 pub fn tooltip(button: Button, paused: bool, settings: &Settings) -> (&'static str, String) {
     match button {
-        Button::Back => ("Back 5 s", key_label("CmdOrControl+Alt+Left")),
-        Button::Forward => ("Forward 5 s", key_label("CmdOrControl+Alt+Right")),
+        Button::Back => ("Back 5 s", skip_label("CmdOrControl+Alt+Left", settings)),
+        Button::Forward => (
+            "Forward 5 s",
+            skip_label("CmdOrControl+Alt+Right", settings),
+        ),
         Button::PlayPause => {
             let key = if crate::tap_key::vk_for(&settings.read_tap_key) != 0 {
                 tap_label(&settings.read_tap_key)
@@ -167,6 +170,23 @@ pub fn tooltip(button: Button, paused: bool, settings: &Settings) -> (&'static s
             (if paused { "Resume" } else { "Pause" }, key)
         }
         Button::Stop => ("Stop", key_label(&settings.stop_hotkey)),
+    }
+}
+
+/// A skip shortcut, or nothing if Read or Stop uses the same keys, since
+/// then the skip key isn't registered. Compared as `apply_skip_hotkeys` does,
+/// so modifier order doesn't matter.
+fn skip_label(accelerator: &str, settings: &Settings) -> String {
+    use tauri_plugin_global_shortcut::Shortcut;
+    let id = |keys: &str| keys.trim().parse::<Shortcut>().ok().map(|s| s.id());
+    let skip = id(accelerator);
+    let taken = [&settings.read_hotkey, &settings.stop_hotkey]
+        .iter()
+        .any(|hotkey| skip.is_some() && id(hotkey) == skip);
+    if taken {
+        String::new()
+    } else {
+        key_label(accelerator)
     }
 }
 
@@ -304,5 +324,11 @@ mod tests {
         assert_eq!(tooltip(Button::PlayPause, false, &s).1, "F13");
         s.stop_hotkey = String::new();
         assert_eq!(tooltip(Button::Stop, false, &s).1, "");
+        // Stop on Ctrl+Alt+Left means that key no longer skips back.
+        s.stop_hotkey = "CmdOrControl+Alt+Left".into();
+        assert_eq!(tooltip(Button::Back, false, &s).1, "");
+        s.stop_hotkey = "Alt+Control+Left".into();
+        assert_eq!(tooltip(Button::Back, false, &s).1, "");
+        assert_eq!(tooltip(Button::Forward, false, &s).1, "Ctrl+Alt+→");
     }
 }

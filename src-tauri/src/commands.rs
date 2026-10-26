@@ -59,6 +59,8 @@ pub fn save_settings(app: AppHandle, state: State<AppState>, new: Settings) -> R
 
     // Re-register global shortcuts with any new key combos.
     crate::register_hotkeys(&app, &new)?;
+    // Turning the pill on mid-reading shows it now.
+    crate::pill::refresh();
 
     Ok(())
 }

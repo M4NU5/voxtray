@@ -742,7 +742,8 @@ impl View<'_> {
         let w = pad + label + gap + key + pad;
         let h = 24.0 * s;
         let (x, _) = self.at(tip.x, 0.0);
-        let left = (x - w / 2.0).clamp(4.0 * s, canvas_width - 4.0 * s - w);
+        // Not `clamp`: a tooltip wider than the window would make it panic.
+        let left = (x - w / 2.0).min(canvas_width - 4.0 * s - w).max(4.0 * s);
         let area = Rect {
             x: left,
             y: self.origin.1 - 8.0 * s - h,
@@ -1056,6 +1057,20 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn a_tooltip_wider_than_the_window_still_draws() {
+        let now = 10.0;
+        let mut pill = settled(Stage::Paused, now);
+        pill.hover = Some(Button::PlayPause);
+        let tip = Tip {
+            label: "Resume".into(),
+            key: "Ctrl+Alt+Shift+Super+PrintScreen+Ctrl+Alt+Shift+Super".into(),
+            x: Button::PlayPause.x(),
+            opacity: 1.0,
+        };
+        render(&mut pill, now, Some(&tip));
     }
 
     #[test]
