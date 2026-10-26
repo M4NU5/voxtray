@@ -117,7 +117,10 @@ pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
     );
     let mut engine = match ChunkEngine::open(app, settings) {
         Some(Ok(engine)) => engine,
-        Some(Err(e)) => return notify(app, "Could not read text", &e),
+        Some(Err(e)) => {
+            crate::pill::failed();
+            return notify(app, "Could not read text", &e);
+        }
         // The system voice speaks the whole text itself.
         None => {
             match tts::local::speak(settings, text) {
@@ -153,8 +156,10 @@ pub fn speak_text(app: &AppHandle, settings: &Settings, text: &str) {
     };
     if let Err(e) = played {
         reading.stop();
+        crate::pill::failed();
         notify(app, "Could not read text", &e);
     }
+    crate::pill::refresh();
     crate::sync_skip_hotkeys(app);
 }
 
@@ -166,6 +171,7 @@ fn finished(app: &AppHandle, reading: &Reading, outcome: Outcome) {
     }
     crate::sync_skip_hotkeys(app);
     if let Outcome::Failed(e) = outcome {
+        crate::pill::failed();
         notify(app, "Could not read text", &e);
     }
 }
