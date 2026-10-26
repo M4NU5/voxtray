@@ -7,6 +7,7 @@
 //! and underruns play silence without moving the cursor.
 
 use std::io::Cursor;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
@@ -244,6 +245,8 @@ enum Block {
 pub struct Shared {
     pub timeline: Mutex<Timeline>,
     pub changed: Condvar,
+    /// The loudness of the block playing now, 0 to 1, as `f32` bits.
+    level: AtomicU32,
 }
 
 impl Shared {
@@ -257,6 +260,27 @@ impl Shared {
         self.changed.notify_all();
         out
     }
+
+    /// How loud the audio playing now is, 0 to 1. Silent while paused or
+    /// waiting for audio. Drives the reading pill's equaliser.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub fn level(&self) -> f32 {
+        f32::from_bits(self.level.load(Ordering::Relaxed))
+    }
+}
+
+/// The loudness of `samples`, 0 to 1. Speech sits far below full scale, so
+/// the quiet end is stretched, as Inlay does for its microphone meter.
+fn loudness(samples: &[i16]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let power = samples
+        .iter()
+        .map(|&s| (f32::from(s) / 32_768.0).powi(2))
+        .sum::<f32>()
+        / samples.len() as f32;
+    (power.sqrt() * 4.0).sqrt().min(1.0)
 }
 
 /// Plays a [`Shared`] timeline from its cursor. Ends when the timeline does.
@@ -294,6 +318,11 @@ impl TimelineSource {
         let crossed = t.chunk != chunk_before;
         drop(t);
         self.pos = 0;
+        let level = match block {
+            Block::Audio { .. } => loudness(&self.buf),
+            Block::Silence { .. } | Block::End => 0.0,
+        };
+        self.shared.level.store(level.to_bits(), Ordering::Relaxed);
         match block {
             Block::Audio { rate, channels } => {
                 self.rate = rate;
@@ -478,6 +507,33 @@ mod tests {
         // Whatever was already buffered drains, then the source ends.
         assert!(src.by_ref().count() <= BLOCK);
         assert_eq!(shared.with(|t| t.state()), State::Finished);
+    }
+
+    #[test]
+    fn level_follows_the_block_playing_and_is_silent_when_paused() {
+        let loud = Pcm {
+            samples: vec![16_000; 5_000],
+            sample_rate: 1000,
+            channels: 1,
+        };
+        let shared = timeline(&[loud], true);
+        assert_eq!(shared.level(), 0.0);
+        let mut src = TimelineSource::new(shared.clone());
+        assert!(shared.level() > 0.9, "{}", shared.level());
+        shared.with(|t| t.set_paused(true));
+        // Drain the block already copied, so the next one is silence.
+        pull(&mut src, BLOCK + 1);
+        assert_eq!(shared.level(), 0.0);
+    }
+
+    #[test]
+    fn loudness_stretches_quiet_speech() {
+        assert_eq!(loudness(&[]), 0.0);
+        assert_eq!(loudness(&[0; 64]), 0.0);
+        // A tenth of full scale already reads as most of the meter.
+        let quiet = loudness(&[3_277; 64]);
+        assert!((0.6..0.7).contains(&quiet), "{quiet}");
+        assert_eq!(loudness(&[i16::MAX; 64]), 1.0);
     }
 
     #[test]

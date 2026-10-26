@@ -43,6 +43,7 @@ function applySettings(s) {
   $("speed").value = s.speed;
   $("speed-out").textContent = Number(s.speed).toFixed(2) + "×";
   $("restore-clipboard").checked = s.restore_clipboard;
+  $("show-pill").checked = s.show_pill;
   $("launch-startup").checked = s.launch_at_startup;
 
   $("read-hotkey").value = s.read_hotkey;
@@ -58,6 +59,7 @@ function gatherSettings() {
     stop_hotkey: $("stop-hotkey").value,
     read_tap_key: $("read-tap-key").value,
     restore_clipboard: $("restore-clipboard").checked,
+    show_pill: $("show-pill").checked,
     speed: parseFloat($("speed").value),
     launch_at_startup: $("launch-startup").checked,
     openai_model: $("openai-model").value,
@@ -358,9 +360,10 @@ function setupHotkeyInput(id) {
 setupHotkeyInput("read-hotkey");
 setupHotkeyInput("stop-hotkey");
 
-// The single-key tap uses a Windows keyboard hook.
+// The single-key tap and the reading pill are Windows only.
 if (!navigator.userAgent.includes("Windows")) {
   $("read-tap-key-field").style.display = "none";
+  $("show-pill-field").style.display = "none";
 }
 
 // ---------------------------------------------------------------------------

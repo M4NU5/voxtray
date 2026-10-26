@@ -67,6 +67,8 @@ pub struct Settings {
     pub speed: f32,
     /// Launch the app automatically at login.
     pub launch_at_startup: bool,
+    /// Show the reading pill above the taskbar while reading. Windows only.
+    pub show_pill: bool,
 
     // --- OpenAI ---
     pub openai_model: String,
@@ -101,6 +103,7 @@ impl Default for Settings {
             restore_clipboard: true,
             speed: 1.0,
             launch_at_startup: false,
+            show_pill: true,
             openai_model: "gpt-4o-mini-tts".into(),
             openai_voice: "alloy".into(),
             elevenlabs_model: "eleven_multilingual_v2".into(),

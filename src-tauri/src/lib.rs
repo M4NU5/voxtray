@@ -4,6 +4,7 @@ mod chunker;
 mod commands;
 mod download;
 mod logging;
+mod pill;
 mod player;
 mod reader;
 mod reading;
@@ -136,7 +137,7 @@ fn apply_skip_hotkeys(app: &AppHandle) {
     }
 }
 
-fn show_main(app: &AppHandle) {
+pub(crate) fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
@@ -243,6 +244,10 @@ pub fn run() {
 
             #[cfg(windows)]
             if let Err(e) = tap_key::start(handle.clone()) {
+                log::error!("{e}");
+            }
+            #[cfg(windows)]
+            if let Err(e) = pill::start(handle.clone()) {
                 log::error!("{e}");
             }
 
